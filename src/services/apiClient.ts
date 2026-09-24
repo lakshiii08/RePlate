@@ -1,13 +1,14 @@
 /**
- * Centralized API Client abstraction for RePlate.
- * Handles environment-based switching between real HTTP/WebSocket endpoints and mock fallback.
+ * Centralized API Client for RePlate.
+ * Communicates with backend endpoints (port 8000 or Next.js route handlers)
+ * with robust auto-fallback and error resilience.
  */
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
-const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK_DATA !== 'false';
+const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK_DATA === 'true';
 
 export interface ApiResponse<T> {
-  data: T;
+  data: T | null;
   status: number;
   message?: string;
 }
@@ -17,14 +18,16 @@ export async function fetchApi<T>(
   options: RequestInit = {}
 ): Promise<ApiResponse<T>> {
   if (USE_MOCK) {
-    // In mock mode, log call and return handled response by caller service
-    console.log(`[API MOCK CALL]: ${options.method || 'GET'} ${endpoint}`);
-    // Simulate slight network latency (100-300ms)
-    await new Promise((resolve) => setTimeout(resolve, 150));
+    return { data: null, status: 200, message: 'Mock mode active' };
   }
 
+  // Ensure clean endpoint path
+  const normalizedEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+
+  // 1. Try primary backend URL
   try {
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+    const primaryUrl = `${API_BASE_URL}${normalizedEndpoint}`;
+    const response = await fetch(primaryUrl, {
       headers: {
         'Content-Type': 'application/json',
         ...(options.headers || {}),
@@ -32,19 +35,54 @@ export async function fetchApi<T>(
       ...options,
     });
 
-    if (!response.ok) {
-      throw new Error(`API Error ${response.status}: ${response.statusText}`);
+    if (response.ok) {
+      const data = await response.json();
+      return { data, status: response.status };
     }
+  } catch {
+    // If primary backend fails (e.g., port 8000 unreachable), try local Next.js /api path
+    try {
+      const fallbackUrl = `/api${normalizedEndpoint}`;
+      const response = await fetch(fallbackUrl, {
+        headers: {
+          'Content-Type': 'application/json',
+          ...(options.headers || {}),
+        },
+        ...options,
+      });
 
-    const data = await response.json();
-    return { data, status: response.status };
-  } catch (error) {
-    if (USE_MOCK) {
-      // Return unhandled marker if mock mode fallback is enabled
-      return { data: null as unknown as T, status: 200, message: 'Mock Fallback Active' };
+      if (response.ok) {
+        const data = await response.json();
+        return { data, status: response.status };
+      }
+    } catch {
+      // Both network routes failed, safely report status for local service fallback
     }
-    throw error;
   }
+
+  return { data: null, status: 503, message: 'Backend unreachable; utilizing client mock state' };
 }
 
 export const isMockMode = () => USE_MOCK;
+
+export const apiClient = {
+  get: <T>(endpoint: string, headers?: HeadersInit) =>
+    fetchApi<T>(endpoint, { method: 'GET', headers }),
+
+  post: <T>(endpoint: string, body: unknown, headers?: HeadersInit) =>
+    fetchApi<T>(endpoint, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+    }),
+
+  patch: <T>(endpoint: string, body: unknown, headers?: HeadersInit) =>
+    fetchApi<T>(endpoint, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify(body),
+    }),
+
+  delete: <T>(endpoint: string, headers?: HeadersInit) =>
+    fetchApi<T>(endpoint, { method: 'DELETE', headers }),
+};

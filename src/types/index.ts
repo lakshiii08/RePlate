@@ -8,15 +8,38 @@ export interface User {
   role: UserRole;
   organization?: string;
   avatar?: string;
+  location?: string;
+  status?: string;
+  activeRescueId?: string;
+  address?: string;
+  ownerName?: string;
+  operatingHours?: string;
+  taxId?: string;
+  facilityType?: string;
+  intakeCapacity?: number;
+  dietaryPreferences?: string[];
+  intakeInstructions?: string;
+  vehicleType?: string;
+  vehiclePlate?: string;
+  vehicleCapacityKg?: number;
+  driverLicense?: string;
+  serviceRadiusKm?: number;
+  isOnline?: boolean;
 }
 
 export type FoodCategory =
+  | 'Meal'
+  | 'Bakery'
+  | 'Fruits'
+  | 'Other'
   | 'Cooked Meal'
   | 'Bakery & Bread'
   | 'Fresh Produce'
   | 'Packaged Goods'
   | 'Dairy & Refrigerated'
   | 'Catered Buffet';
+
+export type FoodType = 'Veg' | 'Non-Veg';
 
 export type StorageMethod = 'refrigerated' | 'hot_held' | 'ambient' | 'frozen';
 export type PackagingType = 'sealed' | 'covered' | 'individual_containers' | 'bulk_boxes';
@@ -96,6 +119,8 @@ export interface DeliveryVerification {
   timestamp: string;
 }
 
+export type DeliveryMode = 'VOLUNTEER' | 'SELF_DRIVE';
+
 export interface Donation {
   id: string;
   donorId: string;
@@ -103,11 +128,14 @@ export interface Donation {
   donorAddress: string;
   donorCoords: [number, number];
   foodName: string;
+  foodType?: FoodType;
   category: FoodCategory;
   quantity: string;
   mealCount: number;
   description: string;
+  specialNotes?: string;
   prepTime: string;
+  bestBefore?: string;
   availableFrom: string;
   pickupDeadline: string; // ISO format
   rescueWindowMinutes: number;
@@ -118,6 +146,12 @@ export interface Donation {
   eligibilityStatus: EligibilityStatus;
   eligibilityReason?: string;
   status: RescueStatus;
+  deliveryMode?: DeliveryMode;
+  photos?: string[];
+  pickupOtp?: string;
+  deliveryOtp?: string;
+  aiMatchReason?: string;
+  aiMatchScore?: number;
   matchedShelter?: Shelter;
   assignedDriver?: Driver;
   driverCoords?: [number, number];
@@ -127,6 +161,33 @@ export interface Donation {
   urgencyLevel: 'normal' | 'attention' | 'critical' | 'expired';
 }
 
+export type NotificationType =
+  | 'DONATION_MATCHED'
+  | 'DRIVER_ASSIGNED'
+  | 'PICKUP_REMINDER'
+  | 'DONATION_DELIVERED'
+  | 'SYSTEM_ALERT';
+
+export interface AppNotification {
+  id: string;
+  userId: string;
+  userRole: UserRole;
+  type: NotificationType;
+  title: string;
+  message: string;
+  donationId?: string;
+  timestamp: string;
+  read: boolean;
+  actionUrl?: string;
+  metadata?: {
+    foodName?: string;
+    shelterName?: string;
+    driverName?: string;
+    otp?: string;
+    deliveryMode?: DeliveryMode;
+  };
+}
+
 export interface ImpactStats {
   mealsRescued: number;
   activeRescues: number;
@@ -134,4 +195,39 @@ export interface ImpactStats {
   deliveriesCompleted: number;
   co2PreventedKg: number;
   sheltersServed: number;
+}
+
+export type PartnerKind = 'RESTAURANT' | 'GROCERY' | 'NGO';
+
+export interface NetworkPartner {
+  id: string;
+  name: string;
+  kind: PartnerKind;
+  state: string;
+  city: string;
+  status: 'CONNECTED' | 'PAUSED';
+}
+
+export type ComplaintStatus = 'OPEN' | 'UNDER_REVIEW' | 'RESOLVED';
+
+export interface Complaint {
+  id: string;
+  reporterName: string;
+  organization: string;
+  subject: string;
+  details: string;
+  category: 'Food safety' | 'Pickup issue' | 'Account' | 'Other';
+  priority: 'High' | 'Medium' | 'Low';
+  status: ComplaintStatus;
+  state: string;
+  city: string;
+  submittedAt: string;
+}
+
+export interface RecoveryRecord {
+  id: string;
+  completedAt: string;
+  meals: number;
+  state: string;
+  city: string;
 }

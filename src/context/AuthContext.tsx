@@ -9,8 +9,16 @@ interface AuthContextType {
   loading: boolean;
   login: (email: string, role?: UserRole) => Promise<User>;
   register: (data: { name: string; email: string; phone: string; role: UserRole }) => Promise<User>;
+  sendOtp: (phone: string) => Promise<{ success: boolean; message: string; demoOtp: string }>;
+  verifyOtp: (
+    phone: string,
+    otp: string,
+    role?: UserRole,
+    newUserData?: { name?: string; role?: UserRole; organization?: string }
+  ) => Promise<User>;
   logout: () => Promise<void>;
   switchRole: (role: UserRole) => Promise<User>;
+  updateUserProfile: (updates: Partial<User>) => Promise<User>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -32,6 +40,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(loggedInUser);
     setLoading(false);
     return loggedInUser;
+  };
+
+  const sendOtp = async (phone: string) => {
+    return authService.sendOtp(phone);
+  };
+
+  const verifyOtp = async (
+    phone: string,
+    otp: string,
+    role?: UserRole,
+    newUserData?: { name?: string; role?: UserRole; organization?: string }
+  ) => {
+    setLoading(true);
+    try {
+      const verifiedUser = await authService.verifyOtp(phone, otp, role, newUserData);
+      setUser(verifiedUser);
+      return verifiedUser;
+    } finally {
+      setLoading(false);
+    }
   };
 
   const register = async (data: { name: string; email: string; phone: string; role: UserRole }) => {
@@ -57,8 +85,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return updated;
   };
 
+  const updateUserProfile = async (updates: Partial<User>) => {
+    setLoading(true);
+    const updated = await authService.updateProfile(updates);
+    setUser(updated);
+    setLoading(false);
+    return updated;
+  };
+
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout, switchRole }}>
+    <AuthContext.Provider
+      value={{ user, loading, login, sendOtp, verifyOtp, register, logout, switchRole, updateUserProfile }}
+    >
       {children}
     </AuthContext.Provider>
   );

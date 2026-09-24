@@ -1,49 +1,138 @@
 import { Donation, EligibilityStatus } from '@/types';
 import { MOCK_DONATIONS } from './mockData';
+import { apiClient } from './apiClient';
 
 let donationsStore: Donation[] = [...MOCK_DONATIONS];
 
 export const donationService = {
   async getDonations(): Promise<Donation[]> {
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    const res = await apiClient.get<Donation[]>('/donations');
+    if (res.data && Array.isArray(res.data) && res.data.length > 0) {
+      donationsStore = res.data;
+      return res.data;
+    }
     return [...donationsStore];
   },
 
   async getDonationById(id: string): Promise<Donation | null> {
-    await new Promise((resolve) => setTimeout(resolve, 150));
+    const res = await apiClient.get<Donation>(`/donations/${id}`);
+    if (res.data) {
+      // Sync into store
+      const idx = donationsStore.findIndex((d) => d.id.toLowerCase() === id.toLowerCase());
+      if (idx !== -1) {
+        donationsStore[idx] = res.data;
+      } else {
+        donationsStore.unshift(res.data);
+      }
+      return res.data;
+    }
     const found = donationsStore.find((d) => d.id.toLowerCase() === id.toLowerCase());
-    return found || donationsStore[0]; // fallback for demo smoothness
+    return found || donationsStore[0];
   },
 
   async createDonation(data: Omit<Donation, 'id' | 'createdAt' | 'status' | 'urgencyLevel'>): Promise<Donation> {
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    const res = await apiClient.post<Donation>('/donations', data);
+    if (res.data) {
+      donationsStore.unshift(res.data);
+      return res.data;
+    }
+
+    const urgencyLevel: Donation['urgencyLevel'] =
+      data.rescueWindowMinutes < 30 ? 'critical' : data.rescueWindowMinutes < 60 ? 'attention' : 'normal';
+
     const newDonation: Donation = {
       ...data,
       id: `RP-${Math.floor(1000 + Math.random() * 9000)}`,
       status: 'POSTED',
+      deliveryMode: data.deliveryMode || 'VOLUNTEER',
+      photos: data.photos || [],
+      pickupOtp: data.pickupOtp || Math.floor(1000 + Math.random() * 9000).toString(),
+      deliveryOtp: data.deliveryOtp || Math.floor(1000 + Math.random() * 9000).toString(),
       createdAt: new Date().toISOString(),
-      urgencyLevel: data.rescueWindowMinutes < 30 ? 'critical' : data.rescueWindowMinutes < 60 ? 'attention' : 'normal',
+      urgencyLevel,
     };
     donationsStore.unshift(newDonation);
     return newDonation;
   },
 
-  async updateDonationStatus(id: string, status: Donation['status'], extraFields?: Partial<Donation>): Promise<Donation> {
-    await new Promise((resolve) => setTimeout(resolve, 200));
-    const index = donationsStore.findIndex((d) => d.id.toLowerCase() === id.toLowerCase());
-    if (index === -1) {
-      if (donationsStore[0]) {
-        donationsStore[0] = { ...donationsStore[0], status, ...extraFields };
-        return donationsStore[0];
-      }
-      throw new Error('Donation not found');
-    }
-    donationsStore[index] = {
-      ...donationsStore[index],
+  async updateDonationStatus(
+    id: string,
+    status: Donation['status'],
+    extraFields?: Partial<Donation>
+  ): Promise<Donation> {
+    const res = await apiClient.patch<Donation>(`/donations/${id}`, {
       status,
       ...extraFields,
-    };
-    return donationsStore[index];
+    });
+    let updatedDonation: Donation;
+
+    if (res.data) {
+      const index = donationsStore.findIndex((d) => d.id.toLowerCase() === id.toLowerCase());
+      if (index !== -1) {
+        donationsStore[index] = res.data;
+      }
+      updatedDonation = res.data;
+    } else {
+      const index = donationsStore.findIndex((d) => d.id.toLowerCase() === id.toLowerCase());
+      if (index === -1) {
+        if (donationsStore[0]) {
+          donationsStore[0] = { ...donationsStore[0], status, ...extraFields };
+          updatedDonation = donationsStore[0];
+        } else {
+          throw new Error('Donation not found');
+        }
+      } else {
+        donationsStore[index] = {
+          ...donationsStore[index],
+          status,
+          ...extraFields,
+        };
+        updatedDonation = donationsStore[index];
+      }
+    }
+
+    // Trigger asynchronous notifications based on lifecycle transitions
+    try {
+      const { notificationService } = await import('./notificationService');
+      if (status === 'MATCHED') {
+        void notificationService.triggerDonationMatched(updatedDonation);
+      } else if (status === 'DRIVER_ASSIGNED') {
+        void notificationService.triggerDriverAssigned(updatedDonation);
+      } else if (status === 'PICKUP_IN_PROGRESS') {
+        void notificationService.triggerPickupReminder(updatedDonation);
+      } else if (status === 'DELIVERED') {
+        void notificationService.triggerDonationDelivered(updatedDonation);
+      }
+    } catch {
+      // Non-blocking notification trigger
+    }
+
+    return updatedDonation;
+  },
+
+  async updateDonation(id: string, updates: Partial<Donation>): Promise<Donation> {
+    const res = await apiClient.patch<Donation>(`/donations/${id}`, updates);
+    if (res.data) {
+      const idx = donationsStore.findIndex((d) => d.id.toLowerCase() === id.toLowerCase());
+      if (idx !== -1) {
+        donationsStore[idx] = res.data;
+      }
+      return res.data;
+    }
+    const idx = donationsStore.findIndex((d) => d.id.toLowerCase() === id.toLowerCase());
+    if (idx !== -1) {
+      donationsStore[idx] = { ...donationsStore[idx], ...updates };
+      return donationsStore[idx];
+    }
+    if (donationsStore[0]) {
+      donationsStore[0] = { ...donationsStore[0], ...updates };
+      return donationsStore[0];
+    }
+    throw new Error('Donation not found');
+  },
+
+  async cancelDonation(id: string): Promise<Donation> {
+    return this.updateDonationStatus(id, 'CANCELLED');
   },
 
   /**

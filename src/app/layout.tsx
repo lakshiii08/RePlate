@@ -4,6 +4,7 @@ import './globals.css';
 import QueryProvider from '@/context/QueryProvider';
 import { AuthProvider } from '@/context/AuthContext';
 import { RescueProvider } from '@/context/RescueContext';
+import { NotificationProvider } from '@/context/NotificationContext';
 import Navbar from '@/components/layout/Navbar';
 import Footer from '@/components/layout/Footer';
 
@@ -25,9 +26,11 @@ export default function RootLayout({
         <QueryProvider>
           <AuthProvider>
             <RescueProvider>
-              <Navbar />
-              <main className="flex-grow">{children}</main>
-              <Footer />
+              <NotificationProvider>
+                <Navbar />
+                <main className="flex-grow">{children}</main>
+                <Footer />
+              </NotificationProvider>
             </RescueProvider>
           </AuthProvider>
         </QueryProvider>

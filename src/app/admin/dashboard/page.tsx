@@ -1,47 +1,43 @@
 'use client';
 
-import React, { useState } from 'react';
-import AdminSidebar, { AdminTab } from '@/components/admin/AdminSidebar';
-import CommandCenterView from '@/components/admin/CommandCenterView';
-import LiveOperationsMapView from '@/components/admin/LiveOperationsMapView';
-import CriticalRescuesView from '@/components/admin/CriticalRescuesView';
-import RescueManagementView from '@/components/admin/RescueManagementView';
-import DynamicRematchDemoView from '@/components/admin/DynamicRematchDemoView';
+import React, { Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
+import NetworkOverviewView from '@/components/admin/NetworkOverviewView';
+import AdminProvidersView from '@/components/admin/AdminProvidersView';
+import AdminDriversView from '@/components/admin/AdminDriversView';
+import AdminDeliveriesView from '@/components/admin/AdminDeliveriesView';
+import AdminAlertsView from '@/components/admin/AdminAlertsView';
+import AdminReportsView from '@/components/admin/AdminReportsView';
+import AdminSettingsView from '@/components/admin/AdminSettingsView';
+import MonthlyFoodSavedGraphView from '@/components/admin/MonthlyFoodSavedGraphView';
+import CityStateMatrixView from '@/components/admin/CityStateMatrixView';
+import ConnectedNGOsView from '@/components/admin/ConnectedNGOsView';
+import ComplaintsQueueView from '@/components/admin/ComplaintsQueueView';
 import SafetyReviewView from '@/components/admin/SafetyReviewView';
-import RescueCopilotView from '@/components/admin/RescueCopilotView';
-import UsersManagementView from '@/components/admin/UsersManagementView';
-import ImpactDashboardView from '@/components/admin/ImpactDashboardView';
-import { useRescue } from '@/context/RescueContext';
+
+function AdminDashboardContent() {
+  const searchParams = useSearchParams();
+  const tab = searchParams.get('tab');
+
+  if (tab === 'providers') return <AdminProvidersView />;
+  if (tab === 'drivers') return <AdminDriversView />;
+  if (tab === 'deliveries') return <AdminDeliveriesView />;
+  if (tab === 'alerts') return <AdminAlertsView />;
+  if (tab === 'reports') return <AdminReportsView />;
+  if (tab === 'settings') return <AdminSettingsView />;
+  if (tab === 'food_saved_analytics' || tab === 'monthly-recovered') return <MonthlyFoodSavedGraphView />;
+  if (tab === 'city_state_matrix' || tab === 'city-state-matrix') return <CityStateMatrixView />;
+  if (tab === 'connected_ngos' || tab === 'ngos') return <ConnectedNGOsView />;
+  if (tab === 'complaints_desk' || tab === 'complaints') return <ComplaintsQueueView />;
+  if (tab === 'safety_audit') return <SafetyReviewView />;
+
+  return <NetworkOverviewView />;
+}
 
 export default function AdminDashboardPage() {
-  const [activeTab, setActiveTab] = useState<AdminTab>('command_center');
-  const { donations } = useRescue();
-
-  const criticalCount = donations.filter(
-    (d) => d.urgencyLevel === 'critical' || d.status === 'RE_MATCHING'
-  ).length || 2;
-
   return (
-    <div className="flex min-h-[calc(100vh-4rem)] bg-slate-50">
-      {/* SIDEBAR */}
-      <AdminSidebar
-        activeTab={activeTab}
-        onSelectTab={setActiveTab}
-        criticalCount={criticalCount}
-      />
-
-      {/* MAIN CONTENT AREA */}
-      <main className="flex-1 p-6 lg:p-8 max-w-7xl">
-        {/* Dynamic Section Renderer */}
-        {activeTab === 'command_center' && <CommandCenterView />}
-        {activeTab === 'live_operations' && <LiveOperationsMapView />}
-        {activeTab === 'critical_rescues' && <CriticalRescuesView />}
-        {activeTab === 'all_rescues' && <RescueManagementView />}
-        {activeTab === 'safety_review' && <SafetyReviewView />}
-        {activeTab === 'rescue_copilot' && <RescueCopilotView />}
-        {activeTab === 'users' && <UsersManagementView />}
-        {activeTab === 'impact' && <ImpactDashboardView />}
-      </main>
-    </div>
+    <Suspense fallback={<div className="p-8 text-center text-xs text-slate-400">Loading admin workspace...</div>}>
+      <AdminDashboardContent />
+    </Suspense>
   );
 }

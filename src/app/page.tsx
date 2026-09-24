@@ -235,74 +235,73 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* 5. AI SECTION */}
+      {/* 5. AUTOMATED LOGISTICS & DISPATCH CAPABILITIES */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="bg-slate-900 text-white rounded-3xl p-8 lg:p-12 space-y-8 relative overflow-hidden">
-          {/* Subtle bg glow */}
-          <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-600/10 rounded-full blur-3xl pointer-events-none" />
-
+        <div className="bg-slate-900 text-white rounded-3xl p-8 lg:p-12 space-y-8 relative overflow-hidden border border-slate-800 shadow-xl">
           <div className="max-w-2xl space-y-3">
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-950 text-emerald-400 text-xs font-bold border border-emerald-800">
-              <Sparkles className="w-3.5 h-3.5" />
-              INTELLIGENT ASSISTANCE
+              <Zap className="w-3.5 h-3.5" />
+              INTELLIGENT DISPATCH & LOGISTICS ENGINE
             </div>
-            <h2 className="text-3xl lg:text-4xl font-black tracking-tight">AI where it actually helps.</h2>
+            <h2 className="text-3xl lg:text-4xl font-black tracking-tight">
+              Automated logistics with transparent safeguards.
+            </h2>
             <p className="text-sm text-slate-300 leading-relaxed">
-              We leverage AI to speed up data entry and calculate explainable feasibility scores—without leaving safety decisions to black boxes.
+              Purpose-built automation eliminates manual phone calls and spreadsheets—accelerating perishable food rescue while ensuring 100% auditable food safety compliance.
             </p>
           </div>
 
-          {/* AI Feature Cards */}
+          {/* Core Capabilities */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            <div className="bg-slate-800/80 p-5 rounded-2xl border border-slate-700 space-y-2">
+            <div className="bg-slate-800/90 p-5 rounded-2xl border border-slate-700/80 space-y-2">
               <div className="text-emerald-400 font-bold text-sm flex items-center gap-1.5">
-                <BrainCircuit className="w-4 h-4" />
-                AI Donation Parser
+                <Utensils className="w-4 h-4" />
+                Natural Language Surplus Parser
               </div>
               <p className="text-xs text-slate-300">
-                Transforms freeform natural text into structured fields (Quantity, Prep Time, Category, Packaging).
+                Transforms unstructured kitchen notes and culinary descriptions into verified categories, meal counts, and thermal parameters.
               </p>
             </div>
 
-            <div className="bg-slate-800/80 p-5 rounded-2xl border border-slate-700 space-y-2">
+            <div className="bg-slate-800/90 p-5 rounded-2xl border border-slate-700/80 space-y-2">
               <div className="text-emerald-400 font-bold text-sm flex items-center gap-1.5">
                 <Clock className="w-4 h-4" />
-                Rescue Urgency Intelligence
+                Expiry-Aware Urgency Engine
               </div>
               <p className="text-xs text-slate-300">
-                Predicts traffic bottlenecks and shifts urgency tier dynamically based on ambient weather.
+                Calculates real-time perishability decay countdowns, escalating couriers dynamically before safe holding thresholds expire.
               </p>
             </div>
 
-            <div className="bg-slate-800/80 p-5 rounded-2xl border border-slate-700 space-y-2">
+            <div className="bg-slate-800/90 p-5 rounded-2xl border border-slate-700/80 space-y-2">
               <div className="text-emerald-400 font-bold text-sm flex items-center gap-1.5">
-                <Bot className="w-4 h-4" />
-                Explainable Matching
+                <ShieldCheck className="w-4 h-4" />
+                Explainable Feasibility Matching
               </div>
               <p className="text-xs text-slate-300">
-                Generates human-readable breakdowns explaining why a shelter was selected over alternatives.
+                Ranks candidate shelters by dietary need, intake capacity, and live transit ETA with transparent multi-factor scoring.
               </p>
             </div>
 
-            <div className="bg-slate-800/80 p-5 rounded-2xl border border-slate-700 space-y-2">
+            <div className="bg-slate-800/90 p-5 rounded-2xl border border-slate-700/80 space-y-2">
               <div className="text-emerald-400 font-bold text-sm flex items-center gap-1.5">
-                <Zap className="w-4 h-4" />
-                Rescue Copilot
+                <Navigation className="w-4 h-4" />
+                Operations Copilot & Dispatch
               </div>
               <p className="text-xs text-slate-300">
-                Real-time operational assistant monitoring live routes to trigger pre-emptive backup dispatch.
+                Inspects live fleet telemetry and route bottlenecks to recommend automated contingency rerouting and backup couriers.
               </p>
             </div>
           </div>
 
-          {/* Explicit Safety Disclaimer Callout */}
+          {/* Transparent Safety Notice */}
           <div className="bg-amber-950/40 border border-amber-800/60 p-4 rounded-xl flex items-start gap-3 text-xs text-amber-200">
             <HelpCircle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
             <div>
               <span className="font-bold text-white uppercase tracking-wider block mb-0.5">
-                SAFETY INTEGRITY NOTICE
+                FOOD SAFETY & COMPLIANCE INTEGRITY
               </span>
-              AI assists operations and does NOT independently certify food safety. All safety gates rely on deterministic rule verification and donor/driver thermal audits.
+              Algorithms assist logistical coordination and data entry, but food safety is never left to unpredictable black boxes. All donations pass through deterministic rule verification and physical courier temperature checks.
             </div>
           </div>
         </div>
@@ -345,10 +344,10 @@ export default function LandingPage() {
               </p>
             </div>
             <Link
-              href="/shelter/dashboard"
+              href="/recipient/dashboard"
               className="text-xs font-bold text-blue-700 hover:text-blue-800 flex items-center gap-1 pt-2"
             >
-              Open Shelter Dashboard <ChevronRight className="w-4 h-4" />
+              Open Recipient Dashboard <ChevronRight className="w-4 h-4" />
             </Link>
           </div>
 

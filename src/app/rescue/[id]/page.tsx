@@ -23,6 +23,10 @@ import {
   ExternalLink,
   PhoneCall,
   Sparkles,
+  KeyRound,
+  MapPin,
+  Camera,
+  Check,
 } from 'lucide-react';
 
 export default function LiveRescueTrackingPage({ params }: { params: Promise<{ id: string }> }) {
@@ -33,6 +37,7 @@ export default function LiveRescueTrackingPage({ params }: { params: Promise<{ i
   const [riskAlert, setRiskAlert] = useState(false);
   const [recalculating, setRecalculating] = useState(false);
   const [backupOptions, setBackupOptions] = useState<{ drivers: Driver[]; shelters: Shelter[] } | null>(null);
+  const [selfDriveDelivered, setSelfDriveDelivered] = useState(false);
 
   useEffect(() => {
     async function loadData() {
@@ -68,6 +73,13 @@ export default function LiveRescueTrackingPage({ params }: { params: Promise<{ i
     setRiskAlert(false);
   };
 
+  const handleConfirmSelfDelivery = async () => {
+    if (!donation) return;
+    const updated = await donationService.updateDonationStatus(donation.id, 'DELIVERED');
+    setDonation(updated);
+    setSelfDriveDelivered(true);
+  };
+
   if (!donation) {
     return (
       <div className="min-h-[60vh] flex items-center justify-center text-slate-500 font-semibold text-xs">
@@ -76,15 +88,16 @@ export default function LiveRescueTrackingPage({ params }: { params: Promise<{ i
     );
   }
 
-  const milestones = [
+  const isSelfDrive = donation.deliveryMode === 'SELF_DRIVE';
+
+  const volunteerMilestones = [
     { key: 'POSTED', label: 'Donation Posted', done: true },
-    { key: 'VERIFIED', label: 'Food Verified (Deterministic Safety Gate)', done: true },
-    { key: 'MATCHED', label: 'Shelter Matched', done: true },
-    { key: 'DRIVER_ASSIGNED', label: 'Driver Assigned', done: true },
-    { key: 'ACCEPTED', label: 'Driver Accepted Dispatch', done: true },
+    { key: 'VERIFIED', label: 'Food Verified (Safety Gate)', done: true },
+    { key: 'MATCHED', label: 'AI Matched with Shelter', done: true },
+    { key: 'DRIVER_ASSIGNED', label: 'Volunteer Courier Assigned', done: !!donation.assignedDriver },
     {
       key: 'PICKUP_IN_PROGRESS',
-      label: 'Pickup In Progress',
+      label: 'Courier En Route to Pickup (Ask for OTP)',
       active: donation.status === 'PICKUP_IN_PROGRESS' || donation.status === 'MATCHED' || donation.status === 'DRIVER_ASSIGNED',
       done: donation.status === 'PICKED_UP' || donation.status === 'IN_TRANSIT' || donation.status === 'DELIVERED',
     },
@@ -102,50 +115,92 @@ export default function LiveRescueTrackingPage({ params }: { params: Promise<{ i
     },
     {
       key: 'DELIVERED',
-      label: 'Delivered & Recipient Signed',
+      label: 'Delivered & Shelter Signed',
       active: false,
       done: donation.status === 'DELIVERED',
     },
   ];
+
+  const selfDriveMilestones = [
+    { key: 'POSTED', label: 'Donation Posted', done: true },
+    { key: 'VERIFIED', label: 'Food Verified (Safety Gate)', done: true },
+    { key: 'MATCHED', label: 'AI Matched with Recipient NGO', done: true },
+    {
+      key: 'IN_TRANSIT',
+      label: 'Donor Driving to NGO (Navigation Active)',
+      active: donation.status !== 'DELIVERED',
+      done: donation.status === 'DELIVERED',
+    },
+    {
+      key: 'DELIVERED',
+      label: 'Food Handed Over at Shelter Intake Gate',
+      active: false,
+      done: donation.status === 'DELIVERED',
+    },
+  ];
+
+  const currentMilestones = isSelfDrive ? selfDriveMilestones : volunteerMilestones;
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
       {/* Header Bar */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 pb-4">
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="w-3 h-3 rounded-full bg-emerald-500 animate-ping" />
             <h1 className="text-2xl font-black text-slate-900">Live Rescue Operations Command</h1>
             <span className="text-xs font-mono font-bold bg-slate-100 text-slate-700 px-2.5 py-1 rounded-md">
               #{donation.id}
             </span>
+            <span
+              className={`text-[11px] font-extrabold px-3 py-1 rounded-full uppercase ${
+                isSelfDrive
+                  ? 'bg-blue-100 text-blue-800 border border-blue-300'
+                  : 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+              }`}
+            >
+              {isSelfDrive ? '🚗 Donor Self-Drive Mode' : '🛵 Courier Dispatch Mode'}
+            </span>
           </div>
           <p className="text-xs text-slate-500 mt-1">
-            Real-time GPS telemetry & thermal monitoring stream
+            Real-time GPS telemetry, thermal audit tracking, and verified custody stream
           </p>
         </div>
 
-        {/* Demo Simulation Action Button */}
+        {/* Action Controls */}
         <div className="flex items-center gap-3">
-          <button
-            onClick={handleSimulateRisk}
-            className="px-3.5 py-2 bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 shadow-xs"
-            title="Simulate sudden traffic delay or driver cancellation to test dynamic re-matching"
-          >
-            <AlertTriangle className="w-4 h-4 text-amber-600" />
-            Simulate Risk Event (Re-Match Test)
-          </button>
+          {!isSelfDrive && (
+            <>
+              <button
+                onClick={handleSimulateRisk}
+                className="px-3.5 py-2 bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 shadow-xs"
+                title="Simulate sudden traffic delay or driver cancellation to test dynamic re-matching"
+              >
+                <AlertTriangle className="w-4 h-4 text-amber-600" />
+                Simulate Risk Event (Re-Match Test)
+              </button>
 
-          <Link
-            href="/driver/rescue/RP-1024"
-            className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition-all shadow-xs flex items-center gap-1"
-          >
-            Open Driver Interface <ExternalLink className="w-3.5 h-3.5" />
-          </Link>
+              <Link
+                href={`/driver/rescue/${donation.id}`}
+                className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition-all shadow-xs flex items-center gap-1"
+              >
+                Open Driver HUD <ExternalLink className="w-3.5 h-3.5" />
+              </Link>
+            </>
+          )}
+
+          {isSelfDrive && donation.status !== 'DELIVERED' && (
+            <button
+              onClick={handleConfirmSelfDelivery}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-extrabold rounded-xl transition-all shadow-xs flex items-center gap-1.5"
+            >
+              <Check className="w-4 h-4" /> Confirm Food Dropped Off at NGO
+            </button>
+          )}
         </div>
       </div>
 
-      {/* SECTION 13: DYNAMIC RE-MATCHING RISK ALERT BANNER */}
+      {/* DYNAMIC RE-MATCHING RISK ALERT BANNER */}
       {riskAlert && (
         <div className="bg-amber-950 text-white p-6 rounded-2xl border border-amber-700 space-y-4 shadow-xl animate-bounce-slow">
           <div className="flex items-start justify-between">
@@ -195,78 +250,185 @@ export default function LiveRescueTrackingPage({ params }: { params: Promise<{ i
 
       {/* MAIN TRACKING GRID */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* LEFT / MAIN AREA: LARGE INTERACTIVE MAP */}
-        <div className="lg:col-span-8 bg-white rounded-2xl border border-slate-200 p-3 shadow-md h-[560px]">
-          <RescueMap
-            donations={[donation]}
-            shelters={donation.matchedShelter ? [donation.matchedShelter] : MOCK_SHELTERS}
-            drivers={donation.assignedDriver ? [donation.assignedDriver] : MOCK_DRIVERS}
-            activeDonationId={donation.id}
-            height="534px"
-          />
+        {/* LEFT / MAIN AREA: INTERACTIVE MAP */}
+        <div className="lg:col-span-8 space-y-4">
+          <div className="bg-white rounded-2xl border border-slate-200 p-3 shadow-md h-[540px]">
+            <RescueMap
+              donations={[donation]}
+              shelters={donation.matchedShelter ? [donation.matchedShelter] : MOCK_SHELTERS}
+              drivers={isSelfDrive ? [] : donation.assignedDriver ? [donation.assignedDriver] : MOCK_DRIVERS}
+              activeDonationId={donation.id}
+              mode={isSelfDrive ? 'NGO_DESTINATION' : 'DRIVER_APPROACH'}
+              height="514px"
+            />
+          </div>
+
+          {/* ITEM PHOTOS GALLERY (DONOR ADDED) */}
+          {donation.photos && donation.photos.length > 0 && (
+            <div className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3 shadow-xs">
+              <div className="flex items-center gap-2">
+                <Camera className="w-4 h-4 text-emerald-600" />
+                <h3 className="text-xs font-extrabold text-slate-900 uppercase tracking-wider">
+                  Verified Food Item Photos (Attached by Donor)
+                </h3>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {donation.photos.map((imgUrl, idx) => (
+                  <div key={idx} className="relative rounded-xl overflow-hidden aspect-video border border-slate-200 bg-slate-100 group shadow-2xs">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={imgUrl}
+                      alt={`Food item ${idx + 1}`}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                    />
+                    <div className="absolute bottom-1 right-1 bg-black/70 text-white text-[9px] px-1.5 py-0.5 rounded font-mono">
+                      Photo #{idx + 1}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* RIGHT PANEL: RESCUE SUMMARY & MILESTONES */}
-        <div className="lg:col-span-4 space-y-6">
-          {/* Rescue Summary Card */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-4">
+        {/* RIGHT PANEL: RESCUE SUMMARY, OTP CARD & MILESTONES */}
+        <div className="lg:col-span-4 space-y-5">
+          {/* 1. PICKUP HANDOVER OTP CARD (FOR VOLUNTEER DISPATCH) */}
+          {!isSelfDrive && (
+            <div className="bg-emerald-950 text-white p-5 rounded-2xl border border-emerald-700 space-y-3 shadow-xl">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <KeyRound className="w-4 h-4 text-emerald-400" />
+                  <span className="text-xs font-mono font-bold text-emerald-400 uppercase tracking-wider">
+                    PICKUP HANDOVER OTP
+                  </span>
+                </div>
+                <span className="text-[10px] bg-emerald-800 text-emerald-200 px-2 py-0.5 rounded-full font-bold">
+                  DONOR VERIFICATION PIN
+                </span>
+              </div>
+
+              <p className="text-xs text-emerald-200 leading-relaxed">
+                The volunteer courier will request this 4-digit code upon arrival. Share this code to authorize package handover:
+              </p>
+
+              <div className="flex items-center justify-center py-3 bg-emerald-900/90 rounded-xl border border-emerald-600 shadow-inner">
+                <span className="font-mono text-3xl font-black tracking-[0.4em] text-white">
+                  {donation.pickupOtp || '4829'}
+                </span>
+              </div>
+
+              <div className="text-[11px] text-emerald-300 flex items-start gap-1.5 pt-1">
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
+                <span>Only disclose after verifying courier credentials and thermal packaging.</span>
+              </div>
+            </div>
+          )}
+
+          {/* 2. SELF-DRIVE NGO DESTINATION CARD */}
+          {isSelfDrive && donation.matchedShelter && (
+            <div className="bg-blue-950 text-white p-5 rounded-2xl border border-blue-700 space-y-3 shadow-xl">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Navigation className="w-4 h-4 text-blue-400" />
+                  <span className="text-xs font-mono font-bold text-blue-300 uppercase tracking-wider">
+                    DESTINATION NGO DROP-OFF
+                  </span>
+                </div>
+                <span className="text-[10px] bg-blue-800 text-blue-200 px-2 py-0.5 rounded-full font-bold">
+                  DIRECT DROP
+                </span>
+              </div>
+
+              <div className="space-y-1">
+                <h4 className="text-base font-extrabold text-white">{donation.matchedShelter.name}</h4>
+                <p className="text-xs text-blue-200 flex items-center gap-1">
+                  <MapPin className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                  {donation.matchedShelter.address}
+                </p>
+                <p className="text-[11px] text-blue-300">
+                  Intake Gate: <strong>Rear Loading Bay 2</strong> &bull; Receiving Hours: 7:00 AM – 10:00 PM
+                </p>
+              </div>
+
+              <div className="pt-2">
+                <a
+                  href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(
+                    donation.matchedShelter.address
+                  )}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="w-full py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-2 shadow-md"
+                >
+                  <Navigation className="w-3.5 h-3.5" /> Start Turn-by-Turn GPS Navigation
+                </a>
+              </div>
+            </div>
+          )}
+
+          {/* 3. RESCUE SUMMARY CARD */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5 space-y-3">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div>
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                  RESCUE TRACKER
+                  OPERATIONAL HUD
                 </span>
-                <h3 className="font-extrabold text-slate-900 text-lg">Rescue #{donation.id}</h3>
+                <h3 className="font-extrabold text-slate-900 text-base">{donation.foodName}</h3>
               </div>
               <RescueCountdown deadline={donation.pickupDeadline} compact />
             </div>
 
             <div className="space-y-2 text-xs">
               <div className="flex justify-between py-1 border-b border-slate-50">
-                <span className="text-slate-500">Food Item:</span>
-                <span className="font-bold text-slate-900">{donation.foodName}</span>
-              </div>
-              <div className="flex justify-between py-1 border-b border-slate-50">
-                <span className="text-slate-500">Quantity:</span>
+                <span className="text-slate-500">Portions / Qty:</span>
                 <span className="font-bold text-slate-900">{donation.quantity}</span>
               </div>
               <div className="flex justify-between py-1 border-b border-slate-50">
-                <span className="text-slate-500">Destination Shelter:</span>
+                <span className="text-slate-500">Destination NGO:</span>
                 <span className="font-bold text-blue-700">{donation.matchedShelter?.name || 'Hope Shelter'}</span>
               </div>
-              <div className="flex justify-between py-1 border-b border-slate-50">
-                <span className="text-slate-500">Assigned Driver:</span>
-                <span className="font-bold text-amber-700">{donation.assignedDriver?.name || 'Aarav Patel'}</span>
-              </div>
-              <div className="flex justify-between py-1 border-b border-slate-50">
-                <span className="text-slate-500">Driver Vehicle:</span>
-                <span className="font-bold text-slate-800">{donation.assignedDriver?.vehicleType || 'Refrigerated Van'}</span>
-              </div>
-              <div className="flex justify-between py-1 border-b border-slate-50">
-                <span className="text-slate-500">Rescue Feasibility Score:</span>
-                <span className="font-black text-emerald-600">94%</span>
-              </div>
+              {!isSelfDrive && (
+                <>
+                  <div className="flex justify-between py-1 border-b border-slate-50">
+                    <span className="text-slate-500">Courier Name:</span>
+                    <span className="font-bold text-amber-700">{donation.assignedDriver?.name || 'Aarav Patel'}</span>
+                  </div>
+                  <div className="flex justify-between py-1 border-b border-slate-50">
+                    <span className="text-slate-500">Courier Vehicle:</span>
+                    <span className="font-bold text-slate-800">{donation.assignedDriver?.vehicleType || 'EV Cargo Car'}</span>
+                  </div>
+                </>
+              )}
+              {donation.aiMatchReason && (
+                <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-700">
+                  <div className="text-[10px] uppercase font-bold text-emerald-700 mb-0.5 flex items-center gap-1">
+                    <Sparkles className="w-3 h-3" /> AI Match Explanation
+                  </div>
+                  {donation.aiMatchReason}
+                </div>
+              )}
             </div>
 
-            {/* Quick Contact Driver */}
-            {donation.assignedDriver && (
+            {/* Quick Contact Courier or Shelter */}
+            {!isSelfDrive && donation.assignedDriver && (
               <div className="pt-2">
                 <a
                   href={`tel:${donation.assignedDriver.phone}`}
                   className="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-2"
                 >
                   <PhoneCall className="w-3.5 h-3.5 text-emerald-600" />
-                  Call Driver ({donation.assignedDriver.phone})
+                  Call Courier ({donation.assignedDriver.phone})
                 </a>
               </div>
             )}
           </div>
 
-          {/* MILESTONE TIMELINE */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-4">
-            <h4 className="font-extrabold text-slate-900 text-sm">Rescue Milestones</h4>
+          {/* 4. MILESTONES TIMELINE */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5 space-y-4">
+            <h4 className="font-extrabold text-slate-900 text-sm">Rescue Progress Milestones</h4>
 
             <div className="space-y-3 relative before:absolute before:left-2 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-200">
-              {milestones.map((m, idx) => (
+              {currentMilestones.map((m, idx) => (
                 <div key={idx} className="flex items-start gap-3 relative z-10 text-xs">
                   <div className="mt-0.5">
                     {m.done ? (

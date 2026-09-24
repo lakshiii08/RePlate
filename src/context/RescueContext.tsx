@@ -13,6 +13,8 @@ interface RescueContextType {
   refreshDonations: () => Promise<void>;
   addDonation: (donation: Donation) => void;
   updateDonation: (id: string, updates: Partial<Donation>) => void;
+  editDonation: (id: string, updates: Partial<Donation>) => Promise<Donation>;
+  cancelDonation: (id: string) => Promise<Donation>;
   simulateRiskEvent: (donationId: string) => void;
 }
 
@@ -67,6 +69,22 @@ export function RescueProvider({ children }: { children: React.ReactNode }) {
     );
   };
 
+  const editDonation = async (id: string, updates: Partial<Donation>) => {
+    const updated = await donationService.updateDonation(id, updates);
+    setDonations((prev) =>
+      prev.map((d) => (d.id === id ? { ...d, ...updated } : d))
+    );
+    return updated;
+  };
+
+  const cancelDonation = async (id: string) => {
+    const cancelled = await donationService.cancelDonation(id);
+    setDonations((prev) =>
+      prev.map((d) => (d.id === id ? { ...d, status: 'CANCELLED' } : d))
+    );
+    return cancelled;
+  };
+
   const simulateRiskEvent = (donationId: string) => {
     setDonations((prev) =>
       prev.map((d) => {
@@ -91,6 +109,8 @@ export function RescueProvider({ children }: { children: React.ReactNode }) {
         refreshDonations,
         addDonation,
         updateDonation,
+        editDonation,
+        cancelDonation,
         simulateRiskEvent,
       }}
     >

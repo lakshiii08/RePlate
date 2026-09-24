@@ -1,5 +1,6 @@
 import { Donation, PickupVerification, DeliveryVerification } from '@/types';
 import { donationService } from './donationService';
+import { apiClient } from './apiClient';
 
 export const rescueService = {
   async verifyPickup(
@@ -11,7 +12,11 @@ export const rescueService = {
       driverId: string;
     }
   ): Promise<Donation> {
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    const apiRes = await apiClient.post<Donation>(`/donations/${donationId}/verify-pickup`, verification);
+    if (apiRes.data) {
+      return apiRes.data;
+    }
+
     const pickupData: PickupVerification = {
       ...verification,
       photoUrl: 'https://images.unsplash.com/photo-1542838132-92c53300491e?w=500&auto=format&fit=crop',
@@ -33,7 +38,11 @@ export const rescueService = {
       recipientSignature: string;
     }
   ): Promise<Donation> {
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    const apiRes = await apiClient.post<Donation>(`/donations/${donationId}/verify-delivery`, verification);
+    if (apiRes.data) {
+      return apiRes.data;
+    }
+
     const deliveryData: DeliveryVerification = {
       ...verification,
       photoUrl: 'https://images.unsplash.com/photo-1593113598332-cd288d649433?w=500&auto=format&fit=crop',
@@ -44,5 +53,5 @@ export const rescueService = {
       deliveryVerification: deliveryData,
       status: 'DELIVERED',
     });
-  }
+  },
 };

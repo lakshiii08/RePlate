@@ -31,12 +31,12 @@ export default function DynamicRematchDemoView() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 pb-4">
         <div>
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 text-xs font-bold mb-1">
-            <Sparkles className="w-4 h-4 text-emerald-600" />
-            HACKATHON DEMO MOMENT: DYNAMIC RE-MATCHING
+            <RefreshCw className="w-3.5 h-3.5 text-emerald-600" />
+            CONTINGENCY DISPATCH SYSTEM
           </div>
-          <h1 className="text-2xl font-black text-slate-900">🔄 Dynamic Re-Matching Engine</h1>
+          <h1 className="text-2xl font-black text-slate-900">Dynamic Contingency Re-Routing</h1>
           <p className="text-xs text-slate-500">
-            Interactive step-by-step demonstration of sub-minute dynamic rerouting when driver cancels or encounters traffic
+            Interactive simulator demonstrating automated sub-minute courier rerouting when delays or cancellations occur
           </p>
         </div>
 
@@ -44,14 +44,14 @@ export default function DynamicRematchDemoView() {
           onClick={resetDemo}
           className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl flex items-center gap-1 border border-slate-300"
         >
-          <RefreshCw className="w-3.5 h-3.5" /> Reset Demo Sequence
+          <RefreshCw className="w-3.5 h-3.5" /> Reset Simulator
         </button>
       </div>
 
       {/* DEMO STEP SEQUENCE FLOW DISPLAY */}
       <div className="bg-slate-900 text-white p-6 rounded-2xl border border-slate-800 space-y-6 shadow-xl">
         <div className="text-xs font-mono uppercase tracking-wider text-emerald-400 font-bold flex items-center justify-between">
-          <span>SECTION 5 WOW FEATURE STEP SEQUENCE</span>
+          <span>INCIDENT FAILOVER SEQUENCE</span>
           <span>Step {demoStep} of 5</span>
         </div>
 

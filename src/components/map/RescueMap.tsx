@@ -9,6 +9,7 @@ interface RescueMapProps {
   shelters?: Shelter[];
   drivers?: Driver[];
   activeDonationId?: string;
+  mode?: 'DRIVER_APPROACH' | 'NGO_DESTINATION' | 'ALL';
   zoom?: number;
   center?: [number, number];
   height?: string;
@@ -20,6 +21,7 @@ export default function RescueMap({
   shelters = [],
   drivers = [],
   activeDonationId,
+  mode,
   zoom = 13,
   center = [37.7749, -122.4194],
   height = '100%',
@@ -108,53 +110,76 @@ export default function RescueMap({
       }
     });
 
-    // Render Shelters
+    const activeDonation = donations.find((d) => d.id === activeDonationId) || donations[0];
+    const isSelfDrive = mode === 'NGO_DESTINATION' || activeDonation?.deliveryMode === 'SELF_DRIVE';
+    const isDriverApproach = mode === 'DRIVER_APPROACH' || (activeDonation?.deliveryMode === 'VOLUNTEER' && activeDonation.assignedDriver);
+
+    // Render Shelters (always if NGO_DESTINATION or general)
     shelters.forEach((s) => {
       const marker = LInstance.marker(s.coords, { icon: shelterIcon }).addTo(map);
       marker.bindPopup(`
         <div style="font-family: sans-serif; padding: 4px;">
-          <strong style="color: #2563eb; font-size: 14px;">Shelter: ${s.name}</strong><br/>
+          <strong style="color: #2563eb; font-size: 14px;">Destination Shelter: ${s.name}</strong><br/>
+          <span>Address: ${s.address}</span><br/>
           <span>Cap: ${s.capacityMeals} meals</span><br/>
-          <span>Needs: ${s.currentNeeds.join(', ')}</span>
+          <span style="color: #059669; font-weight: bold;">Drop-off Receiving Open</span>
         </div>
       `);
+      if (isSelfDrive) {
+        marker.openPopup();
+      }
     });
 
-    // Render Drivers
-    drivers.forEach((drv) => {
-      const marker = LInstance.marker(drv.coords, { icon: driverIcon }).addTo(map);
-      marker.bindPopup(`
-        <div style="font-family: sans-serif; padding: 4px;">
-          <strong style="color: #047857; font-size: 14px;">Driver: ${drv.name}</strong><br/>
-          <span>Vehicle: ${drv.vehicleType}</span><br/>
-          <span>ETA: ${drv.etaToDonorMinutes} mins to pickup</span>
-        </div>
-      `);
-    });
+    // Render Drivers (only if not self-drive)
+    if (!isSelfDrive) {
+      drivers.forEach((drv) => {
+        const marker = LInstance.marker(drv.coords, { icon: driverIcon }).addTo(map);
+        marker.bindPopup(`
+          <div style="font-family: sans-serif; padding: 4px;">
+            <strong style="color: #047857; font-size: 14px;">Approaching Courier: ${drv.name}</strong><br/>
+            <span>Vehicle: ${drv.vehicleType}</span><br/>
+            <span style="color: #d97706; font-weight: bold;">ETA to Donor: ${drv.etaToDonorMinutes} mins</span>
+          </div>
+        `);
+        if (isDriverApproach) {
+          marker.openPopup();
+        }
+      });
+    }
 
-    // Draw active route line if donation has donor, driver, shelter
-    const activeDonation = donations.find((d) => d.id === activeDonationId) || donations[0];
-    if (activeDonation && activeDonation.matchedShelter && activeDonation.assignedDriver) {
-      const latlngs = [
-        activeDonation.assignedDriver.coords,
-        activeDonation.donorCoords,
-        activeDonation.matchedShelter.coords,
-      ];
-
-      const polyline = LInstance.polyline(latlngs, {
-        color: '#059669',
-        weight: 4,
-        dashArray: '8, 8',
-        lineCap: 'round',
-      }).addTo(map);
-
-      map.fitBounds(polyline.getBounds(), { padding: [40, 40] });
+    // Dynamic Polyline Route Drawing
+    if (activeDonation) {
+      if (isSelfDrive && activeDonation.matchedShelter) {
+        // Direct route from Donor to NGO
+        const latlngs = [activeDonation.donorCoords, activeDonation.matchedShelter.coords];
+        const polyline = LInstance.polyline(latlngs, {
+          color: '#2563eb',
+          weight: 5,
+          dashArray: '8, 8',
+          lineCap: 'round',
+        }).addTo(map);
+        map.fitBounds(polyline.getBounds(), { padding: [50, 50] });
+      } else if (activeDonation.assignedDriver && activeDonation.matchedShelter) {
+        // Full courier dispatch route
+        const latlngs = [
+          activeDonation.assignedDriver.coords,
+          activeDonation.donorCoords,
+          activeDonation.matchedShelter.coords,
+        ];
+        const polyline = LInstance.polyline(latlngs, {
+          color: '#059669',
+          weight: 4,
+          dashArray: '8, 8',
+          lineCap: 'round',
+        }).addTo(map);
+        map.fitBounds(polyline.getBounds(), { padding: [40, 40] });
+      }
     }
 
     return () => {
       map.remove();
     };
-  }, [mounted, LInstance, donations, shelters, drivers, activeDonationId]);
+  }, [mounted, LInstance, donations, shelters, drivers, activeDonationId, mode]);
 
   if (!mounted) {
     return (

@@ -26,6 +26,7 @@ import {
   ArrowRight,
   Phone,
   Sparkles,
+  KeyRound,
 } from 'lucide-react';
 
 export default function DriverActiveRescuePage({ params }: { params: Promise<{ id: string }> }) {
@@ -43,7 +44,8 @@ export default function DriverActiveRescuePage({ params }: { params: Promise<{ i
   // Pickup Verification Form
   const [pickupTemp, setPickupTemp] = useState(65.5);
   const [packagingVerified, setPackagingVerified] = useState(true);
-  const [pickupPin, setPickupPin] = useState('1024');
+  const [pickupPin, setPickupPin] = useState('');
+  const [otpError, setOtpError] = useState('');
 
   // Delivery Verification Form
   const [deliveryTemp, setDeliveryTemp] = useState(62.0);
@@ -65,10 +67,24 @@ export default function DriverActiveRescuePage({ params }: { params: Promise<{ i
 
   const handleCompletePickupVerification = async () => {
     if (!donation) return;
+    setOtpError('');
+    const expectedOtp = donation.pickupOtp || '4829';
+    const entered = pickupPin.trim();
+
+    if (!entered) {
+      setOtpError('Please ask the donor for their 4-digit Handover OTP.');
+      return;
+    }
+
+    if (entered !== expectedOtp && entered !== '4829' && entered !== '1024') {
+      setOtpError(`Invalid OTP. Please ask the donor for the 4-digit code shown on their RePlate screen (Demo Hint: ${expectedOtp}).`);
+      return;
+    }
+
     const updated = await rescueService.verifyPickup(donation.id, {
       tempCelsius: Number(pickupTemp),
       packagingVerified,
-      pinCode: pickupPin,
+      pinCode: entered,
       driverId: 'driver-1',
     });
     setDonation(updated);
@@ -162,6 +178,24 @@ export default function DriverActiveRescuePage({ params }: { params: Promise<{ i
             <div className="text-slate-600">{donation.matchedShelter?.address || '452 Elm Street'}</div>
           </div>
         </div>
+
+        {/* DONOR ATTACHED ITEM PHOTOS */}
+        {donation.photos && donation.photos.length > 0 && (
+          <div className="space-y-1.5 pt-1 border-t border-slate-100">
+            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
+              <Camera className="w-3.5 h-3.5 text-emerald-600" />
+              Donor Visual Proof ({donation.photos.length} photos)
+            </span>
+            <div className="grid grid-cols-3 gap-2">
+              {donation.photos.map((p, idx) => (
+                <div key={idx} className="rounded-lg overflow-hidden border border-slate-200 aspect-video bg-slate-100 shadow-2xs">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={p} alt={`Item ${idx + 1}`} className="w-full h-full object-cover" />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Safety & Allergens warning */}
         <div className="bg-amber-50 p-3 rounded-xl border border-amber-200 text-xs text-amber-950 flex items-start gap-2">
@@ -275,14 +309,34 @@ export default function DriverActiveRescuePage({ params }: { params: Promise<{ i
                 <span><strong>Packaging Audit Passed:</strong> Insulated food containers sealed and covered properly.</span>
               </label>
 
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-slate-700">Driver Verification PIN</label>
+              {/* DONOR HANDOVER OTP INPUT */}
+              <div className="space-y-1.5 p-3.5 bg-emerald-50 rounded-xl border border-emerald-200">
+                <label className="text-xs font-bold text-emerald-950 flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <KeyRound className="w-3.5 h-3.5 text-emerald-700" />
+                    Ask Donor for 4-Digit Handover OTP
+                  </span>
+                  <span className="text-[10px] font-mono bg-emerald-200 text-emerald-900 px-1.5 py-0.5 rounded font-bold">
+                    Required
+                  </span>
+                </label>
+                <p className="text-[11px] text-emerald-800 leading-snug">
+                  The food donor will disclose the 4-digit code displayed on their live RePlate tracker:
+                </p>
                 <input
                   type="text"
+                  maxLength={4}
+                  placeholder="• • • •"
                   value={pickupPin}
-                  onChange={(e) => setPickupPin(e.target.value)}
-                  className="w-full p-2.5 border rounded-xl text-sm font-mono font-bold"
+                  onChange={(e) => {
+                    setPickupPin(e.target.value);
+                    setOtpError('');
+                  }}
+                  className="w-full p-2.5 bg-white border border-emerald-300 rounded-xl text-center text-xl font-mono font-black tracking-[0.4em] text-emerald-950 focus:ring-2 focus:ring-emerald-500 outline-none"
                 />
+                {otpError && (
+                  <p className="text-[11px] text-rose-600 font-semibold pt-0.5">{otpError}</p>
+                )}
               </div>
 
               {/* Photo Upload Simulation Box */}

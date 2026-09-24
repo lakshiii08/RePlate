@@ -2,652 +2,562 @@
 
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { useRescue } from '@/context/RescueContext';
-import { aiService, ParsedDonationResult } from '@/services/aiService';
+import { useAuth } from '@/context/AuthContext';
 import { donationService } from '@/services/donationService';
-import { FoodCategory, StorageMethod, PackagingType, EligibilityStatus } from '@/types';
+import { FoodCategory, FoodType, DeliveryMode, PackagingType, StorageMethod } from '@/types';
 import {
-  Sparkles,
-  ShieldCheck,
-  AlertTriangle,
+  ArrowLeft,
   Utensils,
   Clock,
-  Package,
   MapPin,
+  Camera,
+  Trash2,
+  Truck,
+  Navigation,
   CheckCircle2,
-  ArrowRight,
-  ArrowLeft,
-  XCircle,
-  HelpCircle,
-  RefreshCw,
+  Sparkles,
+  Info,
+  Calendar,
+  AlertCircle,
 } from 'lucide-react';
 
-export default function CreateDonationPage() {
+const SAMPLE_PHOTOS = [
+  { label: '🍛 Veg Biryani', url: 'https://images.unsplash.com/photo-1546833999-b9f581a1996d?auto=format&fit=crop&w=600&q=80' },
+  { label: '🥖 Bakery Bread', url: 'https://images.unsplash.com/photo-1509440159596-0249088772ff?auto=format&fit=crop&w=600&q=80' },
+  { label: '🥗 Fresh Salads', url: 'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=600&q=80' },
+  { label: '🍎 Fresh Fruits', url: 'https://images.unsplash.com/photo-1610832958506-aa56368176cf?auto=format&fit=crop&w=600&q=80' },
+  { label: '🍝 Pasta Trays', url: 'https://images.unsplash.com/photo-1551183053-bf91a1d81141?auto=format&fit=crop&w=600&q=80' },
+];
+
+const PRESETS = [
+  { name: 'Veg Biryani', category: 'Meal' as FoodCategory, type: 'Veg' as FoodType, qty: '25', unit: 'meals', notes: 'Packed in food-grade insulated trays. Mild spice, keeps hot.' },
+  { name: 'Artisan Sourdough & Croissants', category: 'Bakery' as FoodCategory, type: 'Veg' as FoodType, qty: '30', unit: 'packets', notes: 'Freshly baked today at morning shift. Dry ambient packaging.' },
+  { name: 'Seasonal Fruit Crates', category: 'Fruits' as FoodCategory, type: 'Veg' as FoodType, qty: '20', unit: 'kg', notes: 'Apples, oranges, and bananas. Clean crates ready for immediate consumption.' },
+  { name: 'Grilled Chicken & Rice Bowls', category: 'Meal' as FoodCategory, type: 'Non-Veg' as FoodType, qty: '40', unit: 'meals', notes: 'Individually boxed with compostable cutlery. Refrigerated at 4°C.' },
+];
+
+export default function AddFoodDonationPage() {
   const router = useRouter();
   const { addDonation } = useRescue();
+  const { user } = useAuth();
 
-  const [currentStep, setCurrentStep] = useState(1);
+  // Form Fields as per Lakshita's MVP Spec
+  const [foodName, setFoodName] = useState('');
+  const [foodCategory, setFoodCategory] = useState<FoodCategory>('Meal');
+  const [quantityValue, setQuantityValue] = useState('25');
+  const [quantityUnit, setQuantityUnit] = useState<'kg' | 'packets' | 'meals'>('meals');
+  const [foodType, setFoodType] = useState<FoodType>('Veg');
+  
+  // Timing
+  const [preparedTime, setPreparedTime] = useState(() => {
+    const d = new Date();
+    d.setMinutes(d.getMinutes() - 30);
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  });
 
-  // AI Prompt Parser state
-  const [aiInputText, setAiInputText] = useState(
-    'We have around 50 packed meals of paneer rice prepared at 7 PM and ready for pickup now.'
+  const [bestBeforeTime, setBestBeforeTime] = useState(() => {
+    const d = new Date();
+    d.setHours(d.getHours() + 3);
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  });
+
+  // Pickup Location
+  const [pickupLocation, setPickupLocation] = useState(
+    user?.address ||
+    (user?.organization ? `${user.organization}, 345 Embarcadero Plaza, SF` : '345 Embarcadero Plaza, Financial District, SF')
   );
-  const [parsingAi, setParsingAi] = useState(false);
-  const [aiResult, setAiResult] = useState<ParsedDonationResult | null>(null);
 
-  // Form State
-  const [foodName, setFoodName] = useState('Paneer Rice & Fresh Curry');
-  const [category, setCategory] = useState<FoodCategory>('Cooked Meal');
-  const [quantity, setQuantity] = useState('50 packed meals');
-  const [mealCount, setMealCount] = useState(50);
-  const [description, setDescription] = useState('Warm paneer rice and fresh curry in insulated food trays.');
+  // Fulfillment preference
+  const [deliveryMode, setDeliveryMode] = useState<DeliveryMode>('VOLUNTEER');
 
-  // Step 2 Timing
-  const [prepTime, setPrepTime] = useState('7:00 PM');
-  const [availableFrom, setAvailableFrom] = useState('7:30 PM');
-  const [rescueWindowMinutes, setRescueWindowMinutes] = useState(90);
+  // Food Photo
+  const [photos, setPhotos] = useState<string[]>([
+    'https://images.unsplash.com/photo-1546833999-b9f581a1996d?auto=format&fit=crop&w=600&q=80',
+  ]);
 
-  // Step 3 Storage & Packaging
-  const [storageMethod, setStorageMethod] = useState<StorageMethod>('hot_held');
-  const [packagingType, setPackagingType] = useState<PackagingType>('sealed');
+  // Special Notes
+  const [specialNotes, setSpecialNotes] = useState('');
 
-  // Step 4 Food Safety
-  const [allergens, setAllergens] = useState<string[]>(['Dairy']);
-  const [safeStorage, setSafeStorage] = useState(true);
-  const [cleanContainers, setCleanContainers] = useState(true);
-  const [noContamination, setNoContamination] = useState(true);
-  const [donorVerified, setDonorVerified] = useState(true);
+  // UI state
+  const [submitting, setSubmitting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
 
-  // Step 5 Location
-  const [pickupAddress, setPickupAddress] = useState('345 Embarcadero Plaza, Financial District');
-  const [latitude, setLatitude] = useState(37.794);
-  const [longitude, setLongitude] = useState(-122.396);
-  const [pickupInstructions, setPickupInstructions] = useState('Loading bay B behind main lobby. Call +1 (555) 234-5678 on arrival.');
+  const handleApplyPreset = (preset: typeof PRESETS[0]) => {
+    setFoodName(preset.name);
+    setFoodCategory(preset.category);
+    setFoodType(preset.type);
+    setQuantityValue(preset.qty);
+    setQuantityUnit(preset.unit as 'kg' | 'packets' | 'meals');
+    setSpecialNotes(preset.notes);
+  };
 
-  // Safety Gate Result
-  const [eligibility, setEligibility] = useState<{ status: EligibilityStatus; reason: string } | null>(null);
-
-  // AI Parsing handler
-  const handleAiExtract = async () => {
-    if (!aiInputText.trim()) return;
-    setParsingAi(true);
-    try {
-      const parsed = await aiService.parseSurplusText(aiInputText);
-      setAiResult(parsed);
-      // Populate fields automatically
-      setFoodName(parsed.foodName);
-      setCategory(parsed.category);
-      setQuantity(parsed.quantity);
-      setMealCount(parsed.mealCount);
-      setPrepTime(parsed.prepTime);
-      setStorageMethod(parsed.storageMethod);
-      setPackagingType(parsed.packagingType);
-      if (parsed.allergens.length > 0) {
-        setAllergens(parsed.allergens);
-      }
-    } finally {
-      setParsingAi(false);
+  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      const reader = new FileReader();
+      reader.onload = (loadEvent) => {
+        if (loadEvent.target?.result) {
+          setPhotos((prev) => [...prev, loadEvent.target!.result as string]);
+        }
+      };
+      reader.readAsDataURL(file);
     }
   };
 
-  const handleEvaluateSafetyGate = () => {
-    const res = donationService.evaluateEligibility({
-      storageMethod,
-      packagingType,
-      rescueWindowMinutes,
-      declarations: {
-        safeStorage,
-        cleanContainers,
-        noContamination,
-        donorVerified,
-      },
-    });
-    setEligibility(res);
-    setCurrentStep(6); // Step 6 is Safety Eligibility Gate review
+  const handleRemovePhoto = (index: number) => {
+    setPhotos((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const handleFinalSubmit = async () => {
-    const pickupDeadlineIso = new Date(Date.now() + rescueWindowMinutes * 60 * 1000).toISOString();
-    
-    const created = await donationService.createDonation({
-      donorId: 'donor-1',
-      donorName: 'Grand Hyatt Hotel Catering',
-      donorAddress: pickupAddress,
-      donorCoords: [latitude, longitude],
-      foodName,
-      category,
-      quantity,
-      mealCount,
-      description,
-      prepTime,
-      availableFrom,
-      pickupDeadline: pickupDeadlineIso,
-      rescueWindowMinutes,
-      storageMethod,
-      packagingType,
-      allergens,
-      declarations: {
-        safeStorage,
-        cleanContainers,
-        noContamination,
-        donorVerified,
-      },
-      eligibilityStatus: eligibility?.status || 'ELIGIBLE',
-      eligibilityReason: eligibility?.reason,
-    });
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!foodName.trim()) {
+      setErrorMsg('Please enter the food name.');
+      return;
+    }
+    if (!quantityValue || parseFloat(quantityValue) <= 0) {
+      setErrorMsg('Please specify a valid quantity.');
+      return;
+    }
+    if (!pickupLocation.trim()) {
+      setErrorMsg('Please provide a pickup location.');
+      return;
+    }
 
-    addDonation(created);
-    // Redirect to smart matching screen immediately!
-    router.push(`/rescue/matching/${created.id}`);
+    setErrorMsg('');
+    setSubmitting(true);
+
+    try {
+      const qtyNumber = parseFloat(quantityValue) || 10;
+      let calculatedMeals = qtyNumber;
+      if (quantityUnit === 'kg') {
+        calculatedMeals = Math.round(qtyNumber * 2.5);
+      } else if (quantityUnit === 'packets') {
+        calculatedMeals = Math.round(qtyNumber);
+      }
+
+      // Compute deadline 3 hours from now
+      const deadlineDate = new Date();
+      deadlineDate.setHours(deadlineDate.getHours() + 3);
+
+      const storageMethod: StorageMethod =
+        foodCategory === 'Meal' ? 'hot_held' : foodCategory === 'Bakery' ? 'ambient' : 'refrigerated';
+      const packagingType: PackagingType = 'sealed';
+
+      const newDonation = await donationService.createDonation({
+        donorId: user?.id || 'donor-default',
+        donorName: user?.organization || user?.name || 'Grand Hyatt Hotel Catering',
+        donorAddress: pickupLocation,
+        donorCoords: [37.794, -122.396],
+        foodName: foodName.trim(),
+        foodType,
+        category: foodCategory,
+        quantity: `${quantityValue} ${quantityUnit}`,
+        mealCount: calculatedMeals,
+        description: specialNotes.trim() || `${foodType} ${foodCategory} surplus donation.`,
+        specialNotes: specialNotes.trim(),
+        prepTime: preparedTime,
+        bestBefore: bestBeforeTime,
+        availableFrom: 'Immediately (Ready for Pickup)',
+        pickupDeadline: deadlineDate.toISOString(),
+        rescueWindowMinutes: 180,
+        storageMethod,
+        packagingType,
+        allergens: [],
+        declarations: {
+          safeStorage: true,
+          cleanContainers: true,
+          noContamination: true,
+          donorVerified: true,
+        },
+        eligibilityStatus: 'ELIGIBLE',
+        deliveryMode,
+        photos,
+      });
+
+      addDonation(newDonation);
+      router.push(`/rescue/matching/${newDonation.id}`);
+    } catch (err: unknown) {
+      console.error('Failed to list food:', err);
+      setErrorMsg('An unexpected error occurred while listing food. Please try again.');
+      setSubmitting(false);
+    }
   };
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-8 space-y-8">
-      {/* Header */}
-      <div className="flex items-center justify-between border-b border-slate-200 pb-4">
-        <div>
-          <h1 className="text-2xl font-black text-slate-900 tracking-tight">Post Surplus Food</h1>
-          <p className="text-xs text-slate-500">Multi-step AI-assisted food rescue declaration wizard</p>
-        </div>
-        <button
-          onClick={() => router.push('/donor/dashboard')}
-          className="text-xs text-slate-500 hover:text-slate-900 font-semibold"
+    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+      {/* Top Header */}
+      <div className="flex items-center justify-between">
+        <Link
+          href="/donor/dashboard"
+          className="inline-flex items-center gap-2 text-xs font-bold text-slate-500 hover:text-slate-900 transition-colors"
         >
-          Cancel
-        </button>
+          <ArrowLeft className="w-4 h-4" />
+          Back to Dashboard
+        </Link>
+        <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200/60">
+          🌱 Donor MVP Listing
+        </span>
       </div>
 
-      {/* Step Indicators */}
-      <div className="grid grid-cols-6 gap-2 text-center text-xs font-bold">
-        {[
-          { num: 1, label: 'Food' },
-          { num: 2, label: 'Timing' },
-          { num: 3, label: 'Storage' },
-          { num: 4, label: 'Safety' },
-          { num: 5, label: 'Location' },
-          { num: 6, label: 'Eligibility Gate' },
-        ].map((s) => (
-          <div
-            key={s.num}
-            className={`py-2 rounded-xl border transition-all ${
-              currentStep === s.num
-                ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
-                : currentStep > s.num
-                ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
-                : 'bg-slate-50 text-slate-400 border-slate-200'
-            }`}
-          >
-            Step {s.num}: {s.label}
+      <div className="space-y-1">
+        <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight flex items-center gap-2.5">
+          <Utensils className="w-7 h-7 text-emerald-600" />
+          Add Food for Donation
+        </h1>
+        <p className="text-sm text-slate-500">
+          List your surplus food in under a minute. Our AI matching engine will immediately connect with the best nearby NGO or shelter.
+        </p>
+      </div>
+
+      {/* Quick Autofill Presets */}
+      <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4 space-y-2">
+        <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+          <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+          Quick Autofill Examples
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {PRESETS.map((p, idx) => (
+            <button
+              key={idx}
+              type="button"
+              onClick={() => handleApplyPreset(p)}
+              className="text-xs font-medium px-3 py-1.5 rounded-xl bg-white border border-slate-200 hover:border-emerald-500 hover:text-emerald-700 transition-colors shadow-2xs flex items-center gap-1.5"
+            >
+              <span>{p.name}</span>
+              <span className="text-[10px] text-slate-400">({p.qty} {p.unit})</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Main Form */}
+      <form onSubmit={handleSubmit} className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 sm:p-8 space-y-6">
+        {errorMsg && (
+          <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl text-xs text-rose-700 flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+            <span>{errorMsg}</span>
           </div>
-        ))}
-      </div>
+        )}
 
-      {/* SECTION 6: AI DONATION PARSER */}
-      {currentStep === 1 && (
-        <div className="bg-emerald-950 text-white p-6 rounded-2xl border border-emerald-800 space-y-4 shadow-lg">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Sparkles className="w-5 h-5 text-emerald-400" />
-              <h3 className="font-extrabold text-base">AI Surplus Fast-Parser</h3>
+        {/* 1. Food Name */}
+        <div className="space-y-1.5">
+          <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
+            Food Name <span className="text-rose-500">*</span>
+          </label>
+          <input
+            type="text"
+            required
+            value={foodName}
+            onChange={(e) => setFoodName(e.target.value)}
+            placeholder="e.g., Veg Biryani, Artisanal Loaves, Vegetable Curry"
+            className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50/50 text-sm font-semibold text-slate-900 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-emerald-500 transition-all placeholder:text-slate-400"
+          />
+        </div>
+
+        {/* 2. Food Category & Food Type */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Category */}
+          <div className="space-y-2">
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
+              Food Category <span className="text-rose-500">*</span>
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { id: 'Meal' as FoodCategory, label: '🍱 Meal', sub: 'Hot/Cooked' },
+                { id: 'Bakery' as FoodCategory, label: '🥖 Bakery', sub: 'Bread/Pastry' },
+                { id: 'Fruits' as FoodCategory, label: '🍎 Fruits', sub: 'Produce' },
+                { id: 'Other' as FoodCategory, label: '📦 Other', sub: 'Packaged' },
+              ].map((cat) => (
+                <button
+                  key={cat.id}
+                  type="button"
+                  onClick={() => setFoodCategory(cat.id)}
+                  className={`p-3 rounded-xl text-left border transition-all ${
+                    foodCategory === cat.id
+                      ? 'border-emerald-600 bg-emerald-50/50 text-emerald-900 ring-1 ring-emerald-600'
+                      : 'border-slate-200 bg-white hover:border-slate-300 text-slate-700'
+                  }`}
+                >
+                  <div className="text-xs font-bold">{cat.label}</div>
+                  <div className="text-[10px] text-slate-400">{cat.sub}</div>
+                </button>
+              ))}
             </div>
-            {aiResult && (
-              <span className="text-xs bg-emerald-800 text-emerald-200 px-2.5 py-1 rounded-full font-bold">
-                Confidence: {(aiResult.confidenceScore * 100).toFixed(0)}%
-              </span>
-            )}
           </div>
 
-          <p className="text-xs text-slate-300">Describe your surplus food in your own words below:</p>
-
-          <div className="space-y-3">
-            <textarea
-              rows={3}
-              value={aiInputText}
-              onChange={(e) => setAiInputText(e.target.value)}
-              className="w-full p-3 rounded-xl bg-slate-900 text-white border border-emerald-800 text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-              placeholder='e.g. "We have around 50 packed meals of paneer rice prepared at 7 PM and ready for pickup now."'
-            />
-
-            <div className="flex items-center gap-3">
+          {/* Food Type: Veg / Non-Veg */}
+          <div className="space-y-2">
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
+              Food Type <span className="text-rose-500">*</span>
+            </label>
+            <div className="grid grid-cols-2 gap-3 h-[74px]">
               <button
                 type="button"
-                onClick={handleAiExtract}
-                disabled={parsingAi}
-                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl transition-all shadow-md flex items-center gap-1.5"
-              >
-                <Sparkles className="w-4 h-4" />
-                {parsingAi ? 'Extracting Parameters...' : '✨ Extract with AI'}
-              </button>
-
-              {aiResult && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAiResult(null);
-                    setAiInputText('');
-                  }}
-                  className="text-xs text-slate-400 hover:text-white"
-                >
-                  Clear
-                </button>
-              )}
-            </div>
-
-            {aiResult && (
-              <div className="bg-slate-900/90 p-4 rounded-xl border border-emerald-700/50 space-y-2 text-xs">
-                <div className="text-emerald-400 font-bold uppercase tracking-wider text-[10px]">
-                  Extracted Fields Preview:
-                </div>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-slate-200 font-mono">
-                  <div>
-                    <span className="text-slate-400">Food:</span> {aiResult.foodName}
-                  </div>
-                  <div>
-                    <span className="text-slate-400">Quantity:</span> {aiResult.quantity}
-                  </div>
-                  <div>
-                    <span className="text-slate-400">Category:</span> {aiResult.category}
-                  </div>
-                  <div>
-                    <span className="text-slate-400">Prep At:</span> {aiResult.prepTime}
-                  </div>
-                  <div>
-                    <span className="text-slate-400">Packaging:</span> {aiResult.packagingType}
-                  </div>
-                  <div>
-                    <span className="text-slate-400">Storage:</span> {aiResult.storageMethod}
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* FORM STEPS CONTAINER */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-6 space-y-6">
-        {/* STEP 1: FOOD DETAILS */}
-        {currentStep === 1 && (
-          <div className="space-y-4">
-            <h2 className="text-lg font-extrabold text-slate-900 flex items-center gap-2">
-              <Utensils className="w-5 h-5 text-emerald-600" /> Step 1: Food Item Details
-            </h2>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-slate-700">Food Name</label>
-                <input
-                  type="text"
-                  value={foodName}
-                  onChange={(e) => setFoodName(e.target.value)}
-                  className="w-full p-2.5 border rounded-xl text-xs font-medium focus:ring-2 focus:ring-emerald-500"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-slate-700">Category</label>
-                <select
-                  value={category}
-                  onChange={(e) => setCategory(e.target.value as FoodCategory)}
-                  className="w-full p-2.5 border rounded-xl text-xs font-medium focus:ring-2 focus:ring-emerald-500"
-                >
-                  <option value="Cooked Meal">Cooked Meal</option>
-                  <option value="Bakery & Bread">Bakery & Bread</option>
-                  <option value="Fresh Produce">Fresh Produce</option>
-                  <option value="Packaged Goods">Packaged Goods</option>
-                  <option value="Dairy & Refrigerated">Dairy & Refrigerated</option>
-                  <option value="Catered Buffet">Catered Buffet</option>
-                </select>
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-slate-700">Quantity Description</label>
-                <input
-                  type="text"
-                  value={quantity}
-                  onChange={(e) => setQuantity(e.target.value)}
-                  className="w-full p-2.5 border rounded-xl text-xs font-medium"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-slate-700">Estimated Meal Count</label>
-                <input
-                  type="number"
-                  value={mealCount}
-                  onChange={(e) => setMealCount(Number(e.target.value))}
-                  className="w-full p-2.5 border rounded-xl text-xs font-medium"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-1">
-              <label className="text-xs font-bold text-slate-700">Detailed Description</label>
-              <textarea
-                rows={3}
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                className="w-full p-2.5 border rounded-xl text-xs font-medium"
-              />
-            </div>
-          </div>
-        )}
-
-        {/* STEP 2: TIMING */}
-        {currentStep === 2 && (
-          <div className="space-y-4">
-            <h2 className="text-lg font-extrabold text-slate-900 flex items-center gap-2">
-              <Clock className="w-5 h-5 text-emerald-600" /> Step 2: Rescue Window & Timing
-            </h2>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-slate-700">Preparation Time</label>
-                <input
-                  type="text"
-                  value={prepTime}
-                  onChange={(e) => setPrepTime(e.target.value)}
-                  className="w-full p-2.5 border rounded-xl text-xs"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-slate-700">Available From</label>
-                <input
-                  type="text"
-                  value={availableFrom}
-                  onChange={(e) => setAvailableFrom(e.target.value)}
-                  className="w-full p-2.5 border rounded-xl text-xs"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-slate-700">Rescue Window (Minutes)</label>
-                <input
-                  type="number"
-                  value={rescueWindowMinutes}
-                  onChange={(e) => setRescueWindowMinutes(Number(e.target.value))}
-                  className="w-full p-2.5 border rounded-xl text-xs font-bold text-emerald-700"
-                />
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* STEP 3: STORAGE & PACKAGING */}
-        {currentStep === 3 && (
-          <div className="space-y-4">
-            <h2 className="text-lg font-extrabold text-slate-900 flex items-center gap-2">
-              <Package className="w-5 h-5 text-emerald-600" /> Step 3: Storage & Packaging Method
-            </h2>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-slate-700">Storage Temperature Method</label>
-                {(['hot_held', 'refrigerated', 'ambient', 'frozen'] as StorageMethod[]).map((m) => (
-                  <label
-                    key={m}
-                    className={`flex items-center gap-3 p-3 rounded-xl border text-xs cursor-pointer ${
-                      storageMethod === m ? 'bg-emerald-50 border-emerald-500 font-bold' : 'bg-slate-50'
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="storage"
-                      checked={storageMethod === m}
-                      onChange={() => setStorageMethod(m)}
-                    />
-                    <span className="uppercase">{m.replace('_', ' ')}</span>
-                  </label>
-                ))}
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-slate-700">Packaging Type</label>
-                {(['sealed', 'covered', 'individual_containers', 'bulk_boxes'] as PackagingType[]).map((p) => (
-                  <label
-                    key={p}
-                    className={`flex items-center gap-3 p-3 rounded-xl border text-xs cursor-pointer ${
-                      packagingType === p ? 'bg-emerald-50 border-emerald-500 font-bold' : 'bg-slate-50'
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="packaging"
-                      checked={packagingType === p}
-                      onChange={() => setPackagingType(p)}
-                    />
-                    <span className="uppercase">{p.replace('_', ' ')}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* STEP 4: FOOD SAFETY INFORMATION */}
-        {currentStep === 4 && (
-          <div className="space-y-4">
-            <h2 className="text-lg font-extrabold text-slate-900 flex items-center gap-2">
-              <ShieldCheck className="w-5 h-5 text-emerald-600" /> Step 4: Food Safety Verification
-            </h2>
-
-            <div className="space-y-3 bg-slate-50 p-4 rounded-xl border border-slate-200">
-              <div className="text-xs font-bold text-slate-700">Allergen Declarations:</div>
-              <div className="flex flex-wrap gap-2 text-xs">
-                {['Dairy', 'Gluten', 'Nuts', 'Soy', 'Eggs', 'Shellfish', 'None'].map((allg) => (
-                  <button
-                    key={allg}
-                    type="button"
-                    onClick={() => {
-                      if (allergens.includes(allg)) {
-                        setAllergens(allergens.filter((a) => a !== allg));
-                      } else {
-                        setAllergens([...allergens, allg]);
-                      }
-                    }}
-                    className={`px-3 py-1 rounded-full border ${
-                      allergens.includes(allg)
-                        ? 'bg-emerald-600 text-white border-emerald-600 font-bold'
-                        : 'bg-white text-slate-700 border-slate-300'
-                    }`}
-                  >
-                    {allg}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="space-y-3 pt-2">
-              <label className="flex items-start gap-3 p-3 rounded-xl border bg-slate-50 text-xs">
-                <input
-                  type="checkbox"
-                  checked={safeStorage}
-                  onChange={(e) => setSafeStorage(e.target.checked)}
-                  className="mt-0.5"
-                />
-                <span>
-                  <strong>Safe Temperature affirmed:</strong> Hot food maintained &gt;60°C or refrigerated &lt;4°C prior to pickup.
-                </span>
-              </label>
-
-              <label className="flex items-start gap-3 p-3 rounded-xl border bg-slate-50 text-xs">
-                <input
-                  type="checkbox"
-                  checked={cleanContainers}
-                  onChange={(e) => setCleanContainers(e.target.checked)}
-                  className="mt-0.5"
-                />
-                <span>
-                  <strong>Clean Food Packaging:</strong> Food is packed in food-grade, sanitized containers.
-                </span>
-              </label>
-
-              <label className="flex items-start gap-3 p-3 rounded-xl border bg-slate-50 text-xs">
-                <input
-                  type="checkbox"
-                  checked={noContamination}
-                  onChange={(e) => setNoContamination(e.target.checked)}
-                  className="mt-0.5"
-                />
-                <span>
-                  <strong>No Cross-Contamination:</strong> Handled in accordance with food handler safety protocols.
-                </span>
-              </label>
-            </div>
-          </div>
-        )}
-
-        {/* STEP 5: LOCATION */}
-        {currentStep === 5 && (
-          <div className="space-y-4">
-            <h2 className="text-lg font-extrabold text-slate-900 flex items-center gap-2">
-              <MapPin className="w-5 h-5 text-emerald-600" /> Step 5: Pickup Location & Instructions
-            </h2>
-
-            <div className="space-y-3">
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-slate-700">Pickup Address</label>
-                <input
-                  type="text"
-                  value={pickupAddress}
-                  onChange={(e) => setPickupAddress(e.target.value)}
-                  className="w-full p-2.5 border rounded-xl text-xs"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-slate-700">Pickup Instructions for Driver</label>
-                <textarea
-                  rows={3}
-                  value={pickupInstructions}
-                  onChange={(e) => setPickupInstructions(e.target.value)}
-                  className="w-full p-2.5 border rounded-xl text-xs"
-                />
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* STEP 6: SECTION 7 DEDICATED FOOD SAFETY ELIGIBILITY GATE */}
-        {currentStep === 6 && (
-          <div className="space-y-6">
-            <div className="text-center space-y-2">
-              <h2 className="text-xl font-black text-slate-900">Food Rescue Eligibility Audit</h2>
-              <p className="text-xs text-slate-500">
-                Deterministic safety evaluation before matching algorithm activation
-              </p>
-            </div>
-
-            {/* Status Card */}
-            {eligibility && (
-              <div
-                className={`p-6 rounded-2xl border ${
-                  eligibility.status === 'ELIGIBLE'
-                    ? 'bg-emerald-50 border-emerald-300 text-emerald-950'
-                    : eligibility.status === 'REVIEW_REQUIRED'
-                    ? 'bg-amber-50 border-amber-300 text-amber-950'
-                    : 'bg-rose-50 border-rose-300 text-rose-950'
+                onClick={() => setFoodType('Veg')}
+                className={`p-3 rounded-xl border flex flex-col justify-center items-start transition-all ${
+                  foodType === 'Veg'
+                    ? 'border-emerald-600 bg-emerald-50 text-emerald-900 ring-1 ring-emerald-600'
+                    : 'border-slate-200 bg-white hover:border-slate-300 text-slate-700'
                 }`}
               >
-                <div className="flex items-center gap-3 mb-3">
-                  {eligibility.status === 'ELIGIBLE' && (
-                    <div className="px-3 py-1 rounded-full bg-emerald-600 text-white font-extrabold text-xs flex items-center gap-1.5">
-                      <CheckCircle2 className="w-4 h-4" /> 🟢 ELIGIBLE FOR IMMEDIATE ROUTING
-                    </div>
-                  )}
-                  {eligibility.status === 'REVIEW_REQUIRED' && (
-                    <div className="px-3 py-1 rounded-full bg-amber-600 text-white font-extrabold text-xs flex items-center gap-1.5">
-                      <AlertTriangle className="w-4 h-4" /> 🟡 MANUAL REVIEW REQUIRED
-                    </div>
-                  )}
-                  {eligibility.status === 'DO_NOT_ROUTE' && (
-                    <div className="px-3 py-1 rounded-full bg-rose-600 text-white font-extrabold text-xs flex items-center gap-1.5">
-                      <XCircle className="w-4 h-4" /> 🔴 DO NOT ROUTE (SAFETY REJECTED)
-                    </div>
-                  )}
+                <div className="flex items-center gap-2">
+                  <span className="w-3.5 h-3.5 rounded-full border border-emerald-600 flex items-center justify-center p-0.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
+                  </span>
+                  <span className="text-xs font-bold text-slate-900">Veg</span>
                 </div>
+                <span className="text-[10px] text-emerald-700 font-medium ml-5.5">100% Vegetarian</span>
+              </button>
 
-                <p className="text-xs font-semibold leading-relaxed">{eligibility.reason}</p>
-              </div>
-            )}
-
-            {/* Audit Summary Grid */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs bg-slate-50 p-4 rounded-xl border border-slate-200 font-mono">
-              <div>
-                <span className="text-slate-400 block text-[10px]">PREP TIME</span>
-                <span className="font-bold text-slate-800">{prepTime}</span>
-              </div>
-              <div>
-                <span className="text-slate-400 block text-[10px]">STORAGE</span>
-                <span className="font-bold text-slate-800 uppercase">{storageMethod}</span>
-              </div>
-              <div>
-                <span className="text-slate-400 block text-[10px]">PACKAGING</span>
-                <span className="font-bold text-slate-800 uppercase">{packagingType}</span>
-              </div>
-              <div>
-                <span className="text-slate-400 block text-[10px]">RESCUE WINDOW</span>
-                <span className="font-bold text-slate-800">{rescueWindowMinutes} mins</span>
-              </div>
-            </div>
-
-            {/* Section 7 explicit disclaimer */}
-            <div className="bg-slate-100 p-3 rounded-xl border border-slate-200 text-[11px] text-slate-600 flex items-center gap-2">
-              <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span>
-                <strong>Deterministic Rule Engine:</strong> This status is computed strictly using configured food safety parameters and donor declarations, independent of AI models.
-              </span>
-            </div>
-          </div>
-        )}
-
-        {/* Wizard Controls */}
-        <div className="flex items-center justify-between border-t border-slate-100 pt-4">
-          {currentStep > 1 ? (
-            <button
-              type="button"
-              onClick={() => setCurrentStep(currentStep - 1)}
-              className="px-4 py-2 bg-slate-100 text-slate-700 text-xs font-bold rounded-xl hover:bg-slate-200 flex items-center gap-1"
-            >
-              <ArrowLeft className="w-3.5 h-3.5" /> Back
-            </button>
-          ) : <div />}
-
-          {currentStep < 5 && (
-            <button
-              type="button"
-              onClick={() => setCurrentStep(currentStep + 1)}
-              className="px-5 py-2.5 bg-emerald-600 text-white text-xs font-bold rounded-xl hover:bg-emerald-700 flex items-center gap-1 shadow-sm"
-            >
-              Next Step <ArrowRight className="w-3.5 h-3.5" />
-            </button>
-          )}
-
-          {currentStep === 5 && (
-            <button
-              type="button"
-              onClick={handleEvaluateSafetyGate}
-              className="px-5 py-2.5 bg-emerald-600 text-white text-xs font-bold rounded-xl hover:bg-emerald-700 flex items-center gap-1 shadow-md"
-            >
-              Run Food Safety Gate Audit <ShieldCheck className="w-4 h-4" />
-            </button>
-          )}
-
-          {currentStep === 6 && (
-            <div className="flex items-center gap-3">
               <button
                 type="button"
-                onClick={handleFinalSubmit}
-                disabled={eligibility?.status === 'DO_NOT_ROUTE'}
-                className="px-6 py-3 bg-emerald-600 text-white font-extrabold text-xs rounded-xl hover:bg-emerald-700 disabled:opacity-50 flex items-center gap-2 shadow-lg"
+                onClick={() => setFoodType('Non-Veg')}
+                className={`p-3 rounded-xl border flex flex-col justify-center items-start transition-all ${
+                  foodType === 'Non-Veg'
+                    ? 'border-amber-600 bg-amber-50 text-amber-900 ring-1 ring-amber-600'
+                    : 'border-slate-200 bg-white hover:border-slate-300 text-slate-700'
+                }`}
               >
-                Continue to Smart Matching Engine <ArrowRight className="w-4 h-4" />
+                <div className="flex items-center gap-2">
+                  <span className="w-3.5 h-3.5 rounded-full border border-amber-600 flex items-center justify-center p-0.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-600" />
+                  </span>
+                  <span className="text-xs font-bold text-slate-900">Non-Veg</span>
+                </div>
+                <span className="text-[10px] text-amber-700 font-medium ml-5.5">Meat / Poultry</span>
               </button>
             </div>
-          )}
+          </div>
         </div>
-      </div>
+
+        {/* 3. Quantity */}
+        <div className="space-y-1.5">
+          <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
+            Quantity <span className="text-rose-500">*</span>
+          </label>
+          <div className="flex items-center gap-3">
+            <input
+              type="number"
+              min="1"
+              step="any"
+              required
+              value={quantityValue}
+              onChange={(e) => setQuantityValue(e.target.value)}
+              placeholder="e.g. 25"
+              className="flex-1 px-4 py-3 rounded-xl border border-slate-200 bg-slate-50/50 text-sm font-semibold text-slate-900 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-emerald-500 transition-all"
+            />
+            <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 shrink-0">
+              {(['kg', 'packets', 'meals'] as const).map((unit) => (
+                <button
+                  key={unit}
+                  type="button"
+                  onClick={() => setQuantityUnit(unit)}
+                  className={`px-3 py-2 rounded-lg text-xs font-bold transition-all uppercase ${
+                    quantityUnit === unit
+                      ? 'bg-white text-emerald-800 shadow-2xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  {unit}
+                </button>
+              ))}
+            </div>
+          </div>
+          <p className="text-[11px] text-slate-400">
+            Estimated impact:{' '}
+            <span className="font-bold text-slate-700">
+              {quantityUnit === 'kg'
+                ? `~${Math.round((parseFloat(quantityValue) || 0) * 2.5)} meals`
+                : `${quantityValue || 0} meals`}
+            </span>
+          </p>
+        </div>
+
+        {/* 4. Prepared Time & Best Before / Expiry Time */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="space-y-1.5">
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+              <Clock className="w-3.5 h-3.5 text-slate-400" />
+              Prepared Time
+            </label>
+            <input
+              type="text"
+              value={preparedTime}
+              onChange={(e) => setPreparedTime(e.target.value)}
+              placeholder="e.g., 12:30 PM or Today, 1:00 PM"
+              className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50/50 text-xs font-semibold text-slate-900 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-emerald-500 transition-all"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+              <Calendar className="w-3.5 h-3.5 text-slate-400" />
+              Best Before / Expiry Time <span className="text-rose-500">*</span>
+            </label>
+            <input
+              type="text"
+              required
+              value={bestBeforeTime}
+              onChange={(e) => setBestBeforeTime(e.target.value)}
+              placeholder="e.g., 04:30 PM or 3 hours from now"
+              className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50/50 text-xs font-semibold text-slate-900 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-emerald-500 transition-all"
+            />
+          </div>
+        </div>
+
+        {/* 5. Pickup Location */}
+        <div className="space-y-1.5">
+          <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+            <MapPin className="w-3.5 h-3.5 text-emerald-600" />
+            Pickup Location <span className="text-rose-500">*</span>
+          </label>
+          <input
+            type="text"
+            required
+            value={pickupLocation}
+            onChange={(e) => setPickupLocation(e.target.value)}
+            placeholder="Complete street address or pickup gate"
+            className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50/50 text-sm font-semibold text-slate-900 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-emerald-500 transition-all"
+          />
+        </div>
+
+        {/* 6. Fulfillment / Delivery Preference */}
+        <div className="space-y-2">
+          <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
+            Fulfillment Preference
+          </label>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={() => setDeliveryMode('VOLUNTEER')}
+              className={`p-4 rounded-2xl border text-left transition-all ${
+                deliveryMode === 'VOLUNTEER'
+                  ? 'border-emerald-600 bg-emerald-50/40 ring-1 ring-emerald-600'
+                  : 'border-slate-200 bg-white hover:border-slate-300'
+              }`}
+            >
+              <div className="flex items-center gap-2 mb-1">
+                <Truck className="w-4 h-4 text-emerald-600" />
+                <span className="text-xs font-bold text-slate-900">Request Volunteer / Driver Pickup</span>
+              </div>
+              <p className="text-[11px] text-slate-500">
+                A nearby volunteer arrives at your pickup location. You will receive an arrival Handover OTP.
+              </p>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setDeliveryMode('SELF_DRIVE')}
+              className={`p-4 rounded-2xl border text-left transition-all ${
+                deliveryMode === 'SELF_DRIVE'
+                  ? 'border-emerald-600 bg-emerald-50/40 ring-1 ring-emerald-600'
+                  : 'border-slate-200 bg-white hover:border-slate-300'
+              }`}
+            >
+              <div className="flex items-center gap-2 mb-1">
+                <Navigation className="w-4 h-4 text-emerald-600" />
+                <span className="text-xs font-bold text-slate-900">I will Self-Drive to NGO / Shelter</span>
+              </div>
+              <p className="text-[11px] text-slate-500">
+                Direct drop-off. You will get live GPS turn-by-turn directions to the verified recipient shelter.
+              </p>
+            </button>
+          </div>
+        </div>
+
+        {/* 7. Food Photo (Optional) */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+              <Camera className="w-3.5 h-3.5 text-slate-400" />
+              Food Photo (Optional)
+            </label>
+            <span className="text-[11px] text-slate-400">Helps volunteers identify packages</span>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            {photos.map((url, idx) => (
+              <div key={idx} className="relative w-20 h-20 rounded-2xl overflow-hidden border border-slate-200 group shadow-2xs">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={url} alt={`Upload ${idx + 1}`} className="w-full h-full object-cover" />
+                <button
+                  type="button"
+                  onClick={() => handleRemovePhoto(idx)}
+                  className="absolute inset-0 bg-slate-900/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            ))}
+
+            <label className="w-20 h-20 rounded-2xl border-2 border-dashed border-slate-300 hover:border-emerald-500 flex flex-col items-center justify-center gap-1 cursor-pointer transition-colors bg-slate-50/50">
+              <Camera className="w-5 h-5 text-slate-400" />
+              <span className="text-[10px] font-bold text-slate-500">Upload</span>
+              <input type="file" accept="image/*" onChange={handlePhotoUpload} className="hidden" />
+            </label>
+          </div>
+
+          {/* Quick Sample Photo Selector */}
+          <div className="pt-2">
+            <span className="text-[11px] font-semibold text-slate-400">Or pick a sample photo:</span>
+            <div className="flex flex-wrap gap-2 mt-1.5">
+              {SAMPLE_PHOTOS.map((sp, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => setPhotos([sp.url])}
+                  className="text-[11px] px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors"
+                >
+                  {sp.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* 8. Special Notes */}
+        <div className="space-y-1.5">
+          <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
+            Special Notes <span className="text-slate-400 font-normal">(packaging, storage, allergen info)</span>
+          </label>
+          <textarea
+            rows={3}
+            value={specialNotes}
+            onChange={(e) => setSpecialNotes(e.target.value)}
+            placeholder="e.g., Sealed in foil containers. Keep hot at 60°C. Contains nuts. Ring back kitchen door bell."
+            className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50/50 text-xs font-medium text-slate-900 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-emerald-500 transition-all placeholder:text-slate-400 resize-none"
+          />
+        </div>
+
+        {/* Safety Affirmation Badge */}
+        <div className="p-3 bg-emerald-50/70 border border-emerald-100 rounded-2xl flex items-center gap-2.5 text-xs text-emerald-800">
+          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+          <span>Surplus prepared under safe food handling protocols and verified clean packaging.</span>
+        </div>
+
+        {/* 9. Submit Button */}
+        <div className="pt-4">
+          <button
+            type="submit"
+            disabled={submitting}
+            className="w-full py-4 px-6 rounded-2xl bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white font-extrabold text-sm tracking-wide shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+          >
+            {submitting ? (
+              <>
+                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                <span>Publishing & Matching Nearby Rescuers...</span>
+              </>
+            ) : (
+              <>
+                <Utensils className="w-4 h-4" />
+                <span>List Food for Donation</span>
+              </>
+            )}
+          </button>
+        </div>
+      </form>
     </div>
   );
 }
