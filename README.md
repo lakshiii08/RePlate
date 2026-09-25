@@ -314,7 +314,7 @@ RePlate aims to help build a more efficient food redistribution ecosystem by:
 
 ## 👨‍💻 Team
 
-Built with ❤️ for a hackathon by the ** Code Stormers**.
+Built with ❤️ for a hackathon by the  Code Stormers.
 
 ### RePlate
 
