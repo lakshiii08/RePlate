@@ -13,6 +13,8 @@ import {
   Truck,
   Power,
   Sparkles,
+  KeyRound,
+  ShieldCheck,
 } from 'lucide-react';
 import { useRescue } from '@/context/RescueContext';
 import { useAuth } from '@/context/AuthContext';
@@ -65,6 +67,14 @@ export default function DriverSidebar() {
       href: '/driver/route',
       badge: activeDeliveriesCount > 0 ? 'LIVE' : null,
       badgeColor: 'bg-blue-100 text-blue-800',
+    },
+    {
+      id: 'validate-otp',
+      label: 'Validate OTP',
+      icon: KeyRound,
+      href: '/driver/validate-otp',
+      badge: 'PORTAL',
+      badgeColor: 'bg-emerald-100 text-emerald-800 font-black',
     },
     {
       id: 'notifications',

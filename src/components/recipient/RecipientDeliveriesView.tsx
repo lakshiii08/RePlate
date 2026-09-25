@@ -16,6 +16,7 @@ import {
   X,
   FileSpreadsheet,
   AlertTriangle,
+  Mail,
 } from 'lucide-react';
 import { useRescue } from '@/context/RescueContext';
 import { Donation } from '@/types';
@@ -48,7 +49,7 @@ export default function RecipientDeliveriesView() {
 
   // Export Deliveries CSV
   const handleExportCSV = () => {
-    const headers = ['Rescue ID', 'Food Name', 'Quantity', 'Donor Facility', 'Pickup Address', 'Driver Name', 'Driver Phone', 'Vehicle', 'ETA Deadline', 'Handover OTP'];
+    const headers = ['Rescue ID', 'Food Name', 'Quantity', 'Donor Facility', 'Pickup Address', 'Driver Name', 'Driver Phone', 'Vehicle', 'ETA Deadline', 'Delivery Sign-Off OTP'];
     const rows = incomingDeliveries.map((d) => [
       d.id,
       `"${d.foodName.replace(/"/g, '""')}"`,
@@ -59,7 +60,7 @@ export default function RecipientDeliveriesView() {
       d.assignedDriver?.phone || 'N/A',
       d.assignedDriver?.vehicleType || 'Courier',
       d.pickupDeadline || 'Scheduled',
-      d.pickupOtp || '4829',
+      d.deliveryOtp || '8392',
     ]);
 
     const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
@@ -174,14 +175,16 @@ export default function RecipientDeliveriesView() {
                   <RescueCountdown deadline={item.pickupDeadline} compact />
                 </div>
 
-                <div className="p-3 bg-emerald-50/80 rounded-2xl border border-emerald-200 space-y-1">
-                  <div className="text-[10px] font-bold text-emerald-800 uppercase flex items-center gap-1">
-                    <KeyRound className="w-3.5 h-3.5 text-emerald-700" /> Handover OTP
+                <div className="p-3 bg-blue-50/80 rounded-2xl border border-blue-200 space-y-1">
+                  <div className="text-[10px] font-bold text-blue-800 uppercase flex items-center gap-1">
+                    <KeyRound className="w-3.5 h-3.5 text-blue-700" /> Delivery Sign-Off OTP
                   </div>
-                  <div className="font-mono font-black text-sm text-emerald-900">
-                    {item.pickupOtp || '4829'}
+                  <div className="font-mono font-black text-sm text-blue-950">
+                    {item.deliveryOtp || '8392'}
                   </div>
-                  <div className="text-[10px] text-emerald-700">Driver presents on arrival</div>
+                  <div className="text-[10px] text-blue-700 flex items-center gap-1">
+                    <Mail className="w-2.5 h-2.5" /> Sent to your email &bull; Give to driver
+                  </div>
                 </div>
               </div>
 

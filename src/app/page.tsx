@@ -24,12 +24,11 @@ import {
 import dynamic from 'next/dynamic';
 import RescueCountdown from '@/components/ui/RescueCountdown';
 import { useRescue } from '@/context/RescueContext';
-import { MOCK_SHELTERS, MOCK_DRIVERS } from '@/services/mockData';
 
 const RescueMap = dynamic(() => import('@/components/map/RescueMap'), { ssr: false });
 
 export default function LandingPage() {
-  const { impactStats, donations } = useRescue();
+  const { impactStats, donations, shelters, drivers, isLiveConnected } = useRescue();
   const sampleActiveDonation = donations[0];
 
   return (

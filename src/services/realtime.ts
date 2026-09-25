@@ -10,35 +10,81 @@ class RealtimeEngine {
   private ws: WebSocket | null = null;
   private wsUrl: string = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000';
   private connected: boolean = false;
+  private reconnectTimer: any = null;
+
+  private pingTimer: any = null;
 
   constructor() {
-    if (typeof window !== 'undefined' && process.env.NEXT_PUBLIC_USE_MOCK_DATA === 'false') {
+    if (typeof window !== 'undefined') {
       this.initWebSocket();
     }
   }
 
-  private initWebSocket() {
+  public initWebSocket() {
+    if (typeof window === 'undefined') return;
+    if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
+      return;
+    }
+
     try {
       this.ws = new WebSocket(this.wsUrl);
+
       this.ws.onopen = () => {
         this.connected = true;
-        console.log('[WebSocket]: Connected to RePlate Realtime Engine');
+        console.log('⚡ [Realtime Telemetry]: Connected to live WebSocket stream at', this.wsUrl);
+        if (this.reconnectTimer) {
+          clearTimeout(this.reconnectTimer);
+          this.reconnectTimer = null;
+        }
+
+        // Start 20s heartbeat ping
+        if (this.pingTimer) clearInterval(this.pingTimer);
+        this.pingTimer = setInterval(() => {
+          if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+            this.ws.send(JSON.stringify({ type: 'PING', timestamp: Date.now() }));
+          }
+        }, 20000);
+
+        this.emitLocal('CONNECTED', { status: 'ONLINE', timestamp: new Date().toISOString() });
       };
+
       this.ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
+          if (data.type === 'PONG') return; // Heartbeat response
           this.emitLocal(data.type, data.payload);
         } catch (e) {
-          console.error('[WebSocket Error]:', e);
+          console.error('[Realtime message parse error]:', e);
         }
       };
+
       this.ws.onclose = () => {
         this.connected = false;
-        console.log('[WebSocket]: Disconnected from server');
+        if (this.pingTimer) {
+          clearInterval(this.pingTimer);
+          this.pingTimer = null;
+        }
+        this.emitLocal('DISCONNECTED', { status: 'OFFLINE', timestamp: new Date().toISOString() });
+        console.log('⚡ [Realtime Telemetry]: Disconnected. Reconnecting in 2.5s...');
+        this.scheduleReconnect();
       };
-    } catch {
-      console.log('[WebSocket]: Running in Simulated Offline Mode');
+
+      this.ws.onerror = (err) => {
+        console.warn('⚡ [Realtime Telemetry]: Connection error, closing socket for reconnect.');
+        this.ws?.close();
+      };
+    } catch (e) {
+      console.warn('⚡ [Realtime Telemetry]: WebSocket init failed, retrying in 3s...');
+      this.scheduleReconnect();
     }
+  }
+
+  private scheduleReconnect() {
+    if (this.reconnectTimer) return;
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      this.initWebSocket();
+    }, 2500);
   }
 
   public subscribe(eventType: string, callback: EventCallback): () => void {
@@ -55,12 +101,49 @@ class RealtimeEngine {
   public emitLocal(eventType: string, payload: any) {
     const callbacks = this.listeners.get(eventType);
     if (callbacks) {
-      callbacks.forEach((cb) => cb({ type: eventType, payload }));
+      callbacks.forEach((cb) => {
+        try {
+          cb({ type: eventType, payload });
+        } catch (err) {
+          console.error('[Realtime Listener Error]:', err);
+        }
+      });
+    }
+  }
+
+  public send(type: string, payload: any) {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({ type, payload }));
+    }
+    // Also dispatch locally for instantaneous UI feedback
+    this.emitLocal(type, payload);
+  }
+
+  public async broadcastDriverLocation(params: {
+    driverId: string;
+    coords: [number, number];
+    activeDonationId?: string;
+    speed?: number;
+    heading?: number;
+    etaMinutes?: number;
+  }) {
+    // 1. Send via WebSocket for instant sub-millisecond broadcast
+    this.send('DRIVER_LOCATION_UPDATE', {
+      ...params,
+      timestamp: new Date().toISOString(),
+    });
+
+    // 2. Persist to backend database via REST endpoint
+    try {
+      const { apiClient } = await import('./apiClient');
+      await apiClient.post(`/drivers/${params.driverId}/location`, params);
+    } catch (e) {
+      // Non-blocking
     }
   }
 
   public isConnected(): boolean {
-    return this.connected || process.env.NEXT_PUBLIC_USE_MOCK_DATA === 'true';
+    return this.connected;
   }
 }
 

@@ -2,12 +2,12 @@ import { Donation, EligibilityStatus } from '@/types';
 import { MOCK_DONATIONS } from './mockData';
 import { apiClient } from './apiClient';
 
-let donationsStore: Donation[] = [...MOCK_DONATIONS];
+let donationsStore: Donation[] = [];
 
 export const donationService = {
   async getDonations(): Promise<Donation[]> {
     const res = await apiClient.get<Donation[]>('/donations');
-    if (res.data && Array.isArray(res.data) && res.data.length > 0) {
+    if (res.data && Array.isArray(res.data)) {
       donationsStore = res.data;
       return res.data;
     }
@@ -27,7 +27,7 @@ export const donationService = {
       return res.data;
     }
     const found = donationsStore.find((d) => d.id.toLowerCase() === id.toLowerCase());
-    return found || donationsStore[0];
+    return found || null;
   },
 
   async createDonation(data: Omit<Donation, 'id' | 'createdAt' | 'status' | 'urgencyLevel'>): Promise<Donation> {
@@ -168,5 +168,31 @@ export const donationService = {
       status: 'ELIGIBLE',
       reason: '100% Deterministic Safety Criteria Passed: Temperature, sealed packaging, and food handler declaration verified.',
     };
+  },
+
+  async copilotDonate(payload: {
+    text?: string;
+    photoUrl?: string;
+    donorProfile?: any;
+    donationData?: any;
+  }): Promise<{ success: boolean; donation: Donation; candidates: any[]; bestMatch?: any }> {
+    const res = await apiClient.post<{ success: boolean; donation: Donation; candidates: any[]; bestMatch?: any }>(
+      '/copilot/donate',
+      payload
+    );
+    if (res.data && res.data.donation) {
+      donationsStore.unshift(res.data.donation);
+      return res.data;
+    }
+    throw new Error(res.message || 'Failed to process AI copilot donation.');
+  },
+
+  async matchDonation(donationId: string): Promise<{ success: boolean; candidates: any[]; bestMatch?: any }> {
+    const res = await apiClient.post<{ success: boolean; candidates: any[]; bestMatch?: any }>(
+      '/donations/match',
+      { donation_id: donationId }
+    );
+    if (res.data) return res.data;
+    throw new Error(res.message || 'Failed to calculate candidate matches.');
   },
 };

@@ -9,9 +9,9 @@ interface AuthContextType {
   loading: boolean;
   login: (email: string, role?: UserRole) => Promise<User>;
   register: (data: { name: string; email: string; phone: string; role: UserRole }) => Promise<User>;
-  sendOtp: (phone: string) => Promise<{ success: boolean; message: string; demoOtp: string }>;
+  sendOtp: (identifier: string, role?: UserRole, name?: string) => Promise<{ success: boolean; message: string; sentTo?: string }>;
   verifyOtp: (
-    phone: string,
+    identifier: string,
     otp: string,
     role?: UserRole,
     newUserData?: { name?: string; role?: UserRole; organization?: string }
@@ -42,19 +42,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return loggedInUser;
   };
 
-  const sendOtp = async (phone: string) => {
-    return authService.sendOtp(phone);
+  const sendOtp = async (identifier: string, role?: UserRole, name?: string) => {
+    return authService.sendOtp(identifier, role, name);
   };
 
   const verifyOtp = async (
-    phone: string,
+    identifier: string,
     otp: string,
     role?: UserRole,
     newUserData?: { name?: string; role?: UserRole; organization?: string }
   ) => {
     setLoading(true);
     try {
-      const verifiedUser = await authService.verifyOtp(phone, otp, role, newUserData);
+      const verifiedUser = await authService.verifyOtp(identifier, otp, role, newUserData);
       setUser(verifiedUser);
       return verifiedUser;
     } finally {

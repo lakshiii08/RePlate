@@ -1,30 +1,66 @@
 import { NextResponse } from 'next/server';
-
-// In-memory OTP cache for demo verification
-const otpCache = new Map<string, { otp: string; expiresAt: number }>();
+import { getConfiguredOtpRecipient, saveOtp, sendAuthOtpEmail } from '@/lib/serverEmailService';
 
 export async function POST(request: Request) {
   try {
-    const { phone } = await request.json();
+    const body = await request.json().catch(() => ({}));
+    const { email, phone, role, name } = body;
+
+    const targetEmail = (email || '').trim().toLowerCase();
     const cleanPhone = (phone || '').replace(/[^\d+]/g, '');
 
-    if (!cleanPhone || cleanPhone.length < 8) {
-      return NextResponse.json({ error: 'Please enter a valid phone number' }, { status: 400 });
+    if (!targetEmail && (!cleanPhone || cleanPhone.length < 8)) {
+      return NextResponse.json(
+        { success: false, error: 'A valid email address or phone number is required.' },
+        { status: 400 }
+      );
     }
 
-    // Generate random 4-digit code (or 8492 for test repeatability)
-    const demoOtp = Math.floor(1000 + Math.random() * 9000).toString();
-    const expiresAt = Date.now() + 5 * 60 * 1000; // 5 mins
+    // Generate random 4-digit code
+    const otp = Math.floor(1000 + Math.random() * 9000).toString();
 
-    otpCache.set(cleanPhone, { otp: demoOtp, expiresAt });
+    const recipientEmail = targetEmail || (cleanPhone ? `${cleanPhone.slice(-6)}@replate.org` : '');
+
+    // Save OTP strictly for the entered account
+    if (targetEmail) {
+      saveOtp(targetEmail, otp, role, name);
+    }
+    if (cleanPhone) {
+      saveOtp(cleanPhone, otp, role, name);
+    }
+
+    // Send email if recipient email is available
+    if (recipientEmail && recipientEmail.includes('@')) {
+      const emailResult = await sendAuthOtpEmail({
+        toEmail: recipientEmail,
+        otp,
+        role,
+        name,
+      });
+
+      if (!emailResult.success) {
+        console.error('[send-otp route] Error dispatching email:', emailResult.error);
+        return NextResponse.json(
+          {
+            success: false,
+            error: `Failed to deliver verification email to ${recipientEmail}: ${emailResult.error}`,
+          },
+          { status: 500 }
+        );
+      }
+    }
 
     return NextResponse.json({
       success: true,
-      message: `OTP sent to ${cleanPhone}`,
-      demoOtp,
-      expiresInSeconds: 300,
+      message: `Verification code sent to ${recipientEmail || cleanPhone}. Please check your email inbox to verify.`,
+      sentTo: recipientEmail || cleanPhone,
+      expiresInSeconds: 600,
     });
-  } catch (error) {
-    return NextResponse.json({ error: 'Failed to send OTP' }, { status: 500 });
+  } catch (error: any) {
+    console.error('[send-otp route] Unexpected exception:', error);
+    return NextResponse.json(
+      { success: false, error: error.message || 'Failed to send verification code' },
+      { status: 500 }
+    );
   }
 }

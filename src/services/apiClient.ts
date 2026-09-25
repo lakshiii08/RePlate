@@ -24,7 +24,7 @@ export async function fetchApi<T>(
   // Ensure clean endpoint path
   const normalizedEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
 
-  // 1. Try primary backend URL
+  // 1. Try primary backend URL first
   try {
     const primaryUrl = `${API_BASE_URL}${normalizedEndpoint}`;
     const response = await fetch(primaryUrl, {
@@ -35,12 +35,24 @@ export async function fetchApi<T>(
       ...options,
     });
 
+    const data = await response.json().catch(() => null);
+
     if (response.ok) {
-      const data = await response.json();
       return { data, status: response.status };
     }
+
+    // If 404 on backend, try Next.js /api path as fallback
+    if (response.status === 404) {
+      throw new Error('Endpoint not found on primary backend');
+    }
+
+    return {
+      data,
+      status: response.status,
+      message: data?.error || data?.message || `Request failed with status ${response.status}`,
+    };
   } catch {
-    // If primary backend fails (e.g., port 8000 unreachable), try local Next.js /api path
+    // If primary backend fails (e.g. connection refused, 404), try local Next.js /api path
     try {
       const fallbackUrl = `/api${normalizedEndpoint}`;
       const response = await fetch(fallbackUrl, {
@@ -51,10 +63,17 @@ export async function fetchApi<T>(
         ...options,
       });
 
+      const data = await response.json().catch(() => null);
+
       if (response.ok) {
-        const data = await response.json();
         return { data, status: response.status };
       }
+
+      return {
+        data,
+        status: response.status,
+        message: data?.error || data?.message || `Request failed with status ${response.status}`,
+      };
     } catch {
       // Both network routes failed, safely report status for local service fallback
     }

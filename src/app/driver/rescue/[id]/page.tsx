@@ -1,15 +1,17 @@
 'use client';
 
-import React, { useEffect, useState, use } from 'react';
+import React, { useEffect, useState, useRef, use } from 'react';
 import Link from 'next/link';
 import confetti from 'canvas-confetti';
 import { donationService } from '@/services/donationService';
 import { rescueService } from '@/services/rescueService';
+import { realtimeEngine } from '@/services/realtime';
 import { Donation } from '@/types';
 import dynamic from 'next/dynamic';
 import RescueCountdown from '@/components/ui/RescueCountdown';
 
 const RescueMap = dynamic(() => import('@/components/map/RescueMap'), { ssr: false });
+const InAppNavigator = dynamic(() => import('@/components/map/InAppNavigator'), { ssr: false });
 import {
   Truck,
   ShieldCheck,
@@ -27,14 +29,21 @@ import {
   Phone,
   Sparkles,
   KeyRound,
+  Radio,
 } from 'lucide-react';
 
 export default function DriverActiveRescuePage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
   const [donation, setDonation] = useState<Donation | null>(null);
 
+  // Live Real Device GPS Telemetry
+  const [isTrackingLiveGps, setIsTrackingLiveGps] = useState(false);
+  const [liveGpsCoords, setLiveGpsCoords] = useState<[number, number] | null>(null);
+  const watchIdRef = useRef<number | null>(null);
+
   // Workflow Step: 1 = ACCEPTED, 2 = PICKUP_STARTED, 3 = PICKUP_VERIFIED, 4 = DELIVERY_STARTED, 5 = DELIVERED
   const [workflowStep, setWorkflowStep] = useState(1);
+  const [navMode, setNavMode] = useState<'TURN_BY_TURN' | 'OVERVIEW'>('TURN_BY_TURN');
 
   // Verification Modals
   const [showPickupModal, setShowPickupModal] = useState(false);
@@ -63,7 +72,49 @@ export default function DriverActiveRescuePage({ params }: { params: Promise<{ i
       }
     }
     loadData();
+
+    return () => {
+      if (watchIdRef.current !== null && typeof navigator !== 'undefined' && navigator.geolocation) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+      }
+    };
   }, [resolvedParams.id]);
+
+  const handleToggleDeviceGps = () => {
+    if (isTrackingLiveGps) {
+      if (watchIdRef.current !== null && typeof navigator !== 'undefined' && navigator.geolocation) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+        watchIdRef.current = null;
+      }
+      setIsTrackingLiveGps(false);
+      return;
+    }
+
+    if (typeof navigator === 'undefined' || !navigator.geolocation) {
+      alert('Geolocation is not supported by your browser.');
+      return;
+    }
+
+    setIsTrackingLiveGps(true);
+    watchIdRef.current = navigator.geolocation.watchPosition(
+      (pos) => {
+        const coords: [number, number] = [pos.coords.latitude, pos.coords.longitude];
+        setLiveGpsCoords(coords);
+        const speedKmh = Math.round((pos.coords.speed || 0) * 3.6);
+        realtimeEngine.broadcastDriverLocation({
+          driverId: donation?.assignedDriver?.id || 'driver-1',
+          coords,
+          activeDonationId: donation?.id,
+          speed: speedKmh > 0 ? speedKmh : 32,
+          heading: pos.coords.heading || 0,
+        });
+      },
+      (err) => {
+        console.warn('GPS telemetry notification:', err.message);
+      },
+      { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 }
+    );
+  };
 
   const handleCompletePickupVerification = async () => {
     if (!donation) return;
@@ -77,7 +128,7 @@ export default function DriverActiveRescuePage({ params }: { params: Promise<{ i
     }
 
     if (entered !== expectedOtp && entered !== '4829' && entered !== '1024') {
-      setOtpError(`Invalid OTP. Please ask the donor for the 4-digit code shown on their RePlate screen (Demo Hint: ${expectedOtp}).`);
+      setOtpError('Invalid OTP. Please ask the donor for the 4-digit code sent to their email or displayed on their screen.');
       return;
     }
 
@@ -137,15 +188,117 @@ export default function DriverActiveRescuePage({ params }: { params: Promise<{ i
         <RescueCountdown deadline={donation.pickupDeadline} compact />
       </div>
 
-      {/* NAVIGATION MAP */}
-      <div className="bg-white rounded-2xl border border-slate-200 p-2 shadow-md h-72 relative">
-        <RescueMap
-          donations={[donation]}
-          shelters={donation.matchedShelter ? [donation.matchedShelter] : []}
-          drivers={donation.assignedDriver ? [donation.assignedDriver] : []}
-          activeDonationId={donation.id}
-          height="270px"
-        />
+      {/* Real-time GPS Broadcast Control */}
+      <div className="bg-emerald-950/80 border border-emerald-800 text-white p-3 rounded-xl flex items-center justify-between gap-2 shadow-sm">
+        <div className="flex items-center gap-2">
+          <span
+            className={`w-2.5 h-2.5 rounded-full ${
+              isTrackingLiveGps ? 'bg-emerald-400 animate-ping' : 'bg-slate-400'
+            }`}
+          />
+          <div>
+            <div className="text-[11px] font-bold text-emerald-300">
+              {isTrackingLiveGps ? 'Live GPS Broadcast Active' : 'Device GPS Inactive'}
+            </div>
+            <div className="text-[10px] text-slate-400 font-mono">
+              {liveGpsCoords
+                ? `${liveGpsCoords[0].toFixed(4)}, ${liveGpsCoords[1].toFixed(4)}`
+                : 'Stream physical device position to map'}
+            </div>
+          </div>
+        </div>
+
+        <button
+          onClick={handleToggleDeviceGps}
+          type="button"
+          className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all flex items-center gap-1.5 shadow-xs ${
+            isTrackingLiveGps
+              ? 'bg-rose-600 hover:bg-rose-500 text-white animate-pulse'
+              : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950'
+          }`}
+        >
+          <Radio className="w-3.5 h-3.5" />
+          {isTrackingLiveGps ? 'Stop GPS' : 'Broadcast GPS'}
+        </button>
+      </div>
+
+      {/* NAVIGATION MAP WITH MODE TOGGLE */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between px-1">
+          <div className="flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            <span className="text-[11px] font-black text-slate-700 uppercase tracking-wider">
+              {navMode === 'TURN_BY_TURN' ? 'In-App Live Navigation' : 'Route Overview'}
+            </span>
+          </div>
+
+          <div className="flex items-center p-0.5 bg-slate-100 rounded-lg border border-slate-200 text-[10px] font-bold">
+            <button
+              type="button"
+              onClick={() => setNavMode('TURN_BY_TURN')}
+              className={`px-2.5 py-1 rounded-md transition-all ${
+                navMode === 'TURN_BY_TURN' ? 'bg-white text-slate-900 shadow-2xs font-extrabold' : 'text-slate-500'
+              }`}
+            >
+              Turn-by-Turn
+            </button>
+            <button
+              type="button"
+              onClick={() => setNavMode('OVERVIEW')}
+              className={`px-2.5 py-1 rounded-md transition-all ${
+                navMode === 'OVERVIEW' ? 'bg-white text-slate-900 shadow-2xs font-extrabold' : 'text-slate-500'
+              }`}
+            >
+              Overview
+            </button>
+          </div>
+        </div>
+
+        {navMode === 'TURN_BY_TURN' ? (
+          <div className="rounded-2xl overflow-hidden border border-slate-200 shadow-md">
+            <InAppNavigator
+              origin={{
+                name: 'Courier Staging Base',
+                address: 'Driver Hub, San Francisco',
+                coords: donation.driverCoords || [37.783, -122.408],
+                role: 'ORIGIN',
+              }}
+              pickup={{
+                name: donation.donorName,
+                address: donation.donorAddress,
+                coords: donation.donorCoords || [37.7925, -122.3995],
+                phone: '+1 (555) 234-5678',
+                role: 'PICKUP',
+                notes: 'Service Bay 3 alleyway dock',
+              }}
+              dropoff={{
+                name: donation.matchedShelter?.name || 'Hope Community Shelter',
+                address: donation.matchedShelter?.address || '452 Elm Street, Tenderloin, SF',
+                coords: donation.matchedShelter?.coords || [37.7749, -122.4194],
+                phone: donation.matchedShelter?.contactPhone || '+1 (415) 890-4432',
+                role: 'DROPOFF',
+                notes: 'Kitchen receiver intake dock',
+              }}
+              currentLeg={workflowStep >= 3 ? 'TO_DROPOFF' : 'TO_PICKUP'}
+              onArrived={(leg) => {
+                if (leg === 'TO_PICKUP') setShowPickupModal(true);
+                if (leg === 'TO_DROPOFF') setShowDeliveryModal(true);
+              }}
+              height="380px"
+              mapId="rescue-mission-navigator"
+            />
+          </div>
+        ) : (
+          <div className="bg-white rounded-2xl border border-slate-200 p-2 shadow-md h-72 relative">
+            <RescueMap
+              donations={[donation]}
+              shelters={donation.matchedShelter ? [donation.matchedShelter] : []}
+              drivers={donation.assignedDriver ? [donation.assignedDriver] : []}
+              activeDonationId={donation.id}
+              height="270px"
+            />
+          </div>
+        )}
       </div>
 
       {/* RESCUE DETAILS CARD */}
@@ -212,7 +365,10 @@ export default function DriverActiveRescuePage({ params }: { params: Promise<{ i
 
         {workflowStep === 1 && (
           <button
-            onClick={() => setWorkflowStep(2)}
+            onClick={() => {
+              setWorkflowStep(2);
+              setNavMode('TURN_BY_TURN');
+            }}
             className="w-full py-4 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-sm rounded-xl transition-all shadow-md flex items-center justify-center gap-2"
           >
             <Navigation className="w-4 h-4" /> Start Pickup Navigation
@@ -230,7 +386,10 @@ export default function DriverActiveRescuePage({ params }: { params: Promise<{ i
 
         {workflowStep === 3 && (
           <button
-            onClick={() => setWorkflowStep(4)}
+            onClick={() => {
+              setWorkflowStep(4);
+              setNavMode('TURN_BY_TURN');
+            }}
             className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-sm rounded-xl transition-all shadow-md flex items-center justify-center gap-2"
           >
             <Truck className="w-5 h-5" /> Start Delivery to Shelter

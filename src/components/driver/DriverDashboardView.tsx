@@ -223,6 +223,13 @@ export default function DriverDashboardView() {
             <div className="flex items-center gap-3 shrink-0">
               <RescueCountdown deadline={currentDelivery.pickupDeadline} />
               <Link
+                href={`/driver/validate-otp?order=${currentDelivery.id}&stage=${currentDelivery.status === 'IN_TRANSIT' ? 'delivery' : 'pickup'}`}
+                className="px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 active:scale-98 text-white font-black text-xs transition-all shadow-xs flex items-center gap-2"
+              >
+                <KeyRound className="w-4 h-4 text-emerald-400" />
+                <span>Validate OTP</span>
+              </Link>
+              <Link
                 href="/driver/route"
                 className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white font-black text-xs transition-all shadow-xs flex items-center gap-2"
               >
@@ -241,10 +248,13 @@ export default function DriverDashboardView() {
                   <Building2 className="w-3.5 h-3.5 text-emerald-600" />
                   1. Pickup Location (Donor Kitchen)
                 </div>
-                <div className="flex items-center gap-1.5 font-mono font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-md text-[11px]">
-                  <KeyRound className="w-3 h-3" />
-                  OTP: {currentDelivery.pickupOtp || '4829'}
-                </div>
+                <Link
+                  href={`/driver/validate-otp?order=${currentDelivery.id}&stage=pickup`}
+                  className="flex items-center gap-1.5 font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200/80 px-2.5 py-1 rounded-lg text-[11px] transition-colors"
+                >
+                  <KeyRound className="w-3 h-3 text-emerald-600" />
+                  <span>Verify OTP</span>
+                </Link>
               </div>
 
               <div>

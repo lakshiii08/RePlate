@@ -16,6 +16,7 @@ import {
   Bell,
   FileSpreadsheet,
   Settings,
+  Bot,
 } from 'lucide-react';
 
 export type AdminTab =
@@ -57,6 +58,7 @@ export default function AdminSidebar({
     badgeColor?: string;
   }[] = [
     { id: 'overview', label: 'Overview', href: '/admin/dashboard', icon: LayoutDashboard },
+    { id: 'copilot' as any, label: 'AI Operations Copilot', href: '/admin/copilot', icon: Bot, badgeColor: 'bg-emerald-100 text-emerald-800' },
     { id: 'providers', label: 'Providers', href: '/admin/providers', icon: Store },
     { id: 'drivers', label: 'Drivers', href: '/admin/drivers', icon: Truck },
     { id: 'deliveries', label: 'Deliveries', href: '/admin/deliveries', icon: Package },

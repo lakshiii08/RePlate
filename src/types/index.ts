@@ -70,6 +70,19 @@ export interface Shelter {
   etaMinutes: number;
   contactPhone: string;
   feasibilityScore?: FeasibilityBreakdown;
+  cityZone?: string;
+}
+
+export interface RestaurantLocation {
+  id: string;
+  name: string;
+  category: string;
+  address: string;
+  coords: [number, number];
+  cityZone: string;
+  phone?: string;
+  operatingHours?: string;
+  defaultFoodType?: FoodType;
 }
 
 export interface Driver {
@@ -127,6 +140,8 @@ export interface Donation {
   donorName: string;
   donorAddress: string;
   donorCoords: [number, number];
+  donorEmail?: string;
+  recipientEmail?: string;
   foodName: string;
   foodType?: FoodType;
   category: FoodCategory;

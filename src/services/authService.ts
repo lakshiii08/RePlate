@@ -1,57 +1,13 @@
 import { User, UserRole } from '@/types';
 import { apiClient } from './apiClient';
 
-const MOCK_USERS: User[] = [
-  {
-    id: 'user-donor-1',
-    name: 'Sarah Jenkins',
-    email: 'donor@replate.org',
-    phone: '+1 (555) 234-5678',
-    role: 'DONOR',
-    organization: 'Grand Hyatt Hotel Catering',
-    ownerName: 'Sarah Jenkins (General Manager)',
-    address: '345 Embarcadero Plaza, Financial District, SF, CA 94111',
-    operatingHours: 'Mon - Sun: 06:30 AM - 11:30 PM',
-  },
-  {
-    id: 'user-shelter-1',
-    name: 'Marcus Williams',
-    email: 'shelter@replate.org',
-    phone: '+1 (555) 876-5432',
-    role: 'SHELTER',
-    organization: 'Hope Community Shelter & Kitchen',
-  },
-  {
-    id: 'user-driver-1',
-    name: 'Aarav Patel',
-    email: 'driver@replate.org',
-    phone: '+1 (555) 111-2233',
-    role: 'DRIVER',
-    organization: 'Refrigerated Transport Volunteer',
-  },
-  {
-    id: 'user-admin-1',
-    name: 'Operations Dispatch Admin',
-    email: 'admin@replate.org',
-    phone: '+1 (555) 999-0000',
-    role: 'ADMIN',
-    organization: 'RePlate Regional Command',
-  },
-];
-
 export const authService = {
   async login(email: string, role?: UserRole): Promise<User> {
     const apiRes = await apiClient.post<User>('/auth/login', { email, role });
-    let found: User | null = apiRes.data;
+    const found: User | null = apiRes.data;
 
-    if (!found) {
-      found = MOCK_USERS.find((u) => u.email.toLowerCase() === email.toLowerCase()) || null;
-      if (!found && role) {
-        found = MOCK_USERS.find((u) => u.role === role) || null;
-      }
-      if (!found) {
-        found = MOCK_USERS[0];
-      }
+    if (!found || apiRes.status >= 400) {
+      throw new Error(apiRes.message || 'Account not found. Please sign up or sign in using Email OTP.');
     }
 
     if (typeof window !== 'undefined') {
@@ -61,76 +17,72 @@ export const authService = {
     return found;
   },
 
-  async sendOtp(phone: string): Promise<{ success: boolean; message: string; demoOtp: string }> {
-    const cleanPhone = phone.replace(/[^\d+]/g, '');
-    const apiRes = await apiClient.post<{ success: boolean; message: string; demoOtp: string }>('/auth/send-otp', {
-      phone: cleanPhone,
-    });
+  async sendOtp(
+    identifier: string,
+    role?: UserRole,
+    name?: string
+  ): Promise<{ success: boolean; message: string; sentTo?: string }> {
+    const isEmail = identifier.includes('@');
+    const cleanPhone = identifier.replace(/[^\d+]/g, '');
 
-    if (apiRes.data) {
-      return apiRes.data;
+    const apiRes = await apiClient.post<{ success: boolean; message?: string; error?: string; sentTo?: string }>(
+      '/auth/send-otp',
+      {
+        email: isEmail ? identifier.trim() : undefined,
+        phone: !isEmail ? cleanPhone : undefined,
+        role,
+        name,
+      }
+    );
+
+    if (apiRes.status >= 400 || (apiRes.data && !apiRes.data.success)) {
+      const errMsg = apiRes.data?.error || apiRes.message || 'Failed to deliver verification code. Please check your email.';
+      throw new Error(errMsg);
     }
 
-    // Client fallback
-    const generatedOtp = Math.floor(1000 + Math.random() * 9000).toString();
-    if (typeof window !== 'undefined') {
-      sessionStorage.setItem(`replate_otp_${cleanPhone}`, generatedOtp);
-    }
+    const recipient = apiRes.data?.sentTo || identifier;
     return {
       success: true,
-      message: `OTP sent successfully to ${cleanPhone}`,
-      demoOtp: generatedOtp,
+      message: apiRes.data?.message || `Verification code sent to ${recipient}.`,
+      sentTo: recipient,
     };
   },
 
   async verifyOtp(
-    phone: string,
+    identifier: string,
     otp: string,
     role?: UserRole,
-    newUserData?: { name?: string; role?: UserRole; organization?: string }
+    newUserData?: { name?: string; role?: UserRole; organization?: string; phone?: string }
   ): Promise<User> {
-    const cleanPhone = phone.replace(/[^\d+]/g, '');
-    const apiRes = await apiClient.post<{ user: User; token?: string }>('/auth/verify-otp', {
-      phone: cleanPhone,
-      otp,
-      role,
-      newUserData,
-    });
+    const isEmail = identifier.includes('@');
+    const cleanPhone = identifier.replace(/[^\d+]/g, '');
 
-    let found: User | null = apiRes.data?.user || null;
-
-    if (!found) {
-      // Local fallback
-      const storedOtp = typeof window !== 'undefined' ? sessionStorage.getItem(`replate_otp_${cleanPhone}`) : null;
-      // Allow entered OTP if it matches stored or default demo 8492 or 1234
-      const isValid = otp === storedOtp || otp === '8492' || otp === '1234';
-      if (!isValid && storedOtp) {
-        throw new Error('Invalid OTP. Please check the code and try again.');
+    const apiRes = await apiClient.post<{ success: boolean; user?: User; token?: string; error?: string }>(
+      '/auth/verify-otp',
+      {
+        email: isEmail ? identifier.trim() : undefined,
+        phone: !isEmail ? cleanPhone : undefined,
+        otp: otp.trim(),
+        role,
+        newUserData,
       }
+    );
 
-      // Check if user with phone exists
-      found = MOCK_USERS.find((u) => u.phone.replace(/[^\d+]/g, '') === cleanPhone) || null;
-
-      if (!found) {
-        // Create new user on the fly
-        const userRole = newUserData?.role || role || 'DONOR';
-        found = {
-          id: `user-${Date.now()}`,
-          name: newUserData?.name || (userRole === 'DONOR' ? 'New Food Donor' : userRole === 'SHELTER' ? 'Community Shelter Admin' : 'Volunteer Driver'),
-          email: `${cleanPhone.slice(-4)}@replate.org`,
-          phone: cleanPhone,
-          role: userRole,
-          organization: newUserData?.organization || (userRole === 'DONOR' ? 'Fresh Food Partner' : userRole === 'SHELTER' ? 'City Food Rescue Pantry' : 'Urban Delivery Volunteer'),
-          status: 'ACTIVE',
-        };
-      }
+    if (apiRes.status >= 400 || (apiRes.data && apiRes.data.success === false) || !apiRes.data?.user) {
+      const errMsg = apiRes.data?.error || apiRes.message || 'Invalid or expired verification code. Please check your email.';
+      throw new Error(errMsg);
     }
+
+    const user: User = apiRes.data.user;
 
     if (typeof window !== 'undefined') {
-      localStorage.setItem('replate_session', JSON.stringify(found));
+      localStorage.setItem('replate_session', JSON.stringify(user));
+      if (apiRes.data.token) {
+        localStorage.setItem('replate_auth_token', apiRes.data.token);
+      }
     }
 
-    return found;
+    return user;
   },
 
   async register(data: {
@@ -138,20 +90,13 @@ export const authService = {
     email: string;
     phone: string;
     role: UserRole;
-    password?: string;
+    organization?: string;
   }): Promise<User> {
     const apiRes = await apiClient.post<User>('/auth/register', data);
-    let newUser: User | null = apiRes.data;
+    const newUser: User | null = apiRes.data;
 
-    if (!newUser) {
-      newUser = {
-        id: `user-${Date.now()}`,
-        name: data.name,
-        email: data.email,
-        phone: data.phone,
-        role: data.role,
-        organization: `${data.role} Partner Org`,
-      };
+    if (!newUser || apiRes.status >= 400) {
+      throw new Error(apiRes.message || 'Failed to complete registration.');
     }
 
     if (typeof window !== 'undefined') {
@@ -175,8 +120,11 @@ export const authService = {
 
   async updateProfile(updates: Partial<User>): Promise<User> {
     const current = await this.getCurrentUser();
+    if (!current) {
+      throw new Error('No active user session to update.');
+    }
     const updated: User = {
-      ...(current || MOCK_USERS[0]),
+      ...current,
       ...updates,
     };
     if (typeof window !== 'undefined') {
@@ -188,12 +136,12 @@ export const authService = {
   async logout(): Promise<void> {
     if (typeof window !== 'undefined') {
       localStorage.removeItem('replate_session');
+      localStorage.removeItem('replate_auth_token');
     }
   },
 
   async resetPassword(email: string): Promise<boolean> {
-    await new Promise((resolve) => setTimeout(resolve, 200));
-    console.log(`Password reset notification triggered for ${email}`);
+    await this.sendOtp(email);
     return true;
   },
 };

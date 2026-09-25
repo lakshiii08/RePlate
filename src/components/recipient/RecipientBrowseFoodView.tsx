@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { useRescue } from '@/context/RescueContext';
 import { useAuth } from '@/context/AuthContext';
+import { rescueService } from '@/services/rescueService';
 import { Donation, FoodCategory } from '@/types';
 import RescueCountdown from '@/components/ui/RescueCountdown';
 
@@ -78,8 +79,21 @@ export default function RecipientBrowseFoodView() {
       const recipientOrgName = user?.organization || 'Hope Community Kitchen';
       const recipientAddress = user?.address || '452 Elm Street, Tenderloin, San Francisco, CA';
 
+      // Create live rescue mission in MongoDB & calculate Mapbox route
+      let createdRescue = null;
+      try {
+        const res = await rescueService.createRescue(requestingItem.id, user?.id || 'shelter-1');
+        if (res && res.rescue) {
+          createdRescue = res.rescue;
+        }
+      } catch (apiErr) {
+        console.warn('Backend rescue sync warning (fallback active):', apiErr);
+      }
+
       updateDonation(requestingItem.id, {
         status: 'MATCHED',
+        pickupOtp: createdRescue?.pickupOtp || requestingItem.pickupOtp,
+        deliveryOtp: createdRescue?.deliveryOtp || requestingItem.deliveryOtp,
         matchedShelter: {
           id: user?.id || 'sh-hope-1',
           name: recipientOrgName,
@@ -87,8 +101,8 @@ export default function RecipientBrowseFoodView() {
           coords: [37.7749, -122.4194],
           capacityMeals: user?.intakeCapacity || 140,
           currentNeeds: ['Cooked Meal', 'Bakery', 'Fresh Produce'],
-          distanceKm: 2.1,
-          etaMinutes: 12,
+          distanceKm: createdRescue?.route?.distanceKm || 2.1,
+          etaMinutes: createdRescue?.route?.durationMinutes || 12,
           contactPhone: user?.phone || '+1 (415) 890-4432',
         },
         specialNotes: intakeNotes.trim()

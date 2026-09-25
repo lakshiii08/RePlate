@@ -1,36 +1,56 @@
 import { NextResponse } from 'next/server';
 import { globalServerStore } from '@/lib/serverStore';
+import { verifyStoredOtp } from '@/lib/serverEmailService';
 import { User, UserRole } from '@/types';
 
 export async function POST(request: Request) {
   try {
-    const { phone, otp, role, newUserData } = await request.json();
+    const body = await request.json().catch(() => ({}));
+    const { email, phone, otp, code, role, newUserData } = body;
+
+    const targetEmail = (email || '').trim().toLowerCase();
     const cleanPhone = (phone || '').replace(/[^\d+]/g, '');
+    const cleanOtp = String(otp || code || '').trim();
 
-    if (!cleanPhone || !otp) {
-      return NextResponse.json({ error: 'Phone and OTP are required' }, { status: 400 });
+    if ((!targetEmail && !cleanPhone) || !cleanOtp) {
+      return NextResponse.json(
+        { success: false, error: 'Email or phone and verification code are required.' },
+        { status: 400 }
+      );
     }
 
-    // In demo environment, allow any 4-digit code or fallback
-    if (otp.length < 4) {
-      return NextResponse.json({ error: 'Please enter a valid 4-digit OTP' }, { status: 400 });
+    const identifier = targetEmail || cleanPhone;
+    const verification = verifyStoredOtp(identifier, cleanOtp);
+
+    if (!verification.valid) {
+      return NextResponse.json(
+        { success: false, error: verification.error || 'Invalid or expired verification code.' },
+        { status: 400 }
+      );
     }
 
-    // Check if user exists
-    let existingUser = globalServerStore.users.find(
-      (u) => u.phone.replace(/[^\d+]/g, '') === cleanPhone
-    );
+    // Find existing user or register new user
+    let existingUser = globalServerStore.users.find((u) => {
+      const emailMatches = targetEmail && u.email && u.email.toLowerCase() === targetEmail;
+      const phoneMatches = cleanPhone && u.phone && u.phone.replace(/[^\d+]/g, '') === cleanPhone;
+      return emailMatches || phoneMatches;
+    });
 
     if (!existingUser) {
-      // Create user
-      const targetRole: UserRole = newUserData?.role || role || 'DONOR';
+      const targetRole: UserRole = newUserData?.role || role || (verification.record?.role as UserRole) || 'DONOR';
+      const emailPrefix = targetEmail ? targetEmail.split('@')[0] : 'Partner';
+      const displayName =
+        newUserData?.name ||
+        verification.record?.name ||
+        (emailPrefix.charAt(0).toUpperCase() + emailPrefix.slice(1).replace(/[._]/g, ' '));
+
       const newUser: User = {
         id: `user-${Date.now()}`,
-        name: newUserData?.name || (targetRole === 'DONOR' ? 'Local Restaurant Partner' : targetRole === 'SHELTER' ? 'City Food Hub' : 'Urban Volunteer Driver'),
-        email: `${cleanPhone.slice(-6)}@replate.org`,
-        phone: cleanPhone,
+        name: displayName,
+        email: targetEmail || `${cleanPhone.slice(-6)}@replate.org`,
+        phone: newUserData?.phone || cleanPhone || '',
         role: targetRole,
-        organization: newUserData?.organization || (targetRole === 'DONOR' ? 'Fresh Food Donor' : targetRole === 'SHELTER' ? 'Neighborhood Shelter' : 'Eco Courier Volunteer'),
+        organization: newUserData?.organization || `${displayName}'s Organization`,
         status: 'ACTIVE',
       };
       globalServerStore.users.push(newUser);
@@ -42,7 +62,11 @@ export async function POST(request: Request) {
       user: existingUser,
       token: `token-${existingUser.id}-${Date.now()}`,
     });
-  } catch (error) {
-    return NextResponse.json({ error: 'Verification failed' }, { status: 500 });
+  } catch (error: any) {
+    console.error('[verify-otp route] Unexpected exception:', error);
+    return NextResponse.json(
+      { success: false, error: error.message || 'Verification failed' },
+      { status: 500 }
+    );
   }
 }

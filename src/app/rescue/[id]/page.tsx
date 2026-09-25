@@ -4,6 +4,7 @@ import React, { useEffect, useState, use } from 'react';
 import Link from 'next/link';
 import { donationService } from '@/services/donationService';
 import { matchingService } from '@/services/matchingService';
+import { realtimeEngine } from '@/services/realtime';
 import { Donation, Driver, Shelter } from '@/types';
 import dynamic from 'next/dynamic';
 import RescueCountdown from '@/components/ui/RescueCountdown';
@@ -27,11 +28,18 @@ import {
   MapPin,
   Camera,
   Check,
+  Mail,
+  Play,
+  Pause,
 } from 'lucide-react';
 
 export default function LiveRescueTrackingPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
   const [donation, setDonation] = useState<Donation | null>(null);
+
+  // Real-time GPS Telemetry stream state
+  const [isTelemetryStreaming, setIsTelemetryStreaming] = useState(false);
+  const [liveDriverInfo, setLiveDriverInfo] = useState<any>(null);
 
   // Dynamic Rematch simulation state
   const [riskAlert, setRiskAlert] = useState(false);
@@ -45,7 +53,61 @@ export default function LiveRescueTrackingPage({ params }: { params: Promise<{ i
       setDonation(d);
     }
     loadData();
+
+    // Subscribe to live status transitions across all network nodes
+    const unsubStatus = realtimeEngine.subscribe('DONATION_STATUS_UPDATE', (evt) => {
+      const p = evt.payload;
+      if (p && (p.donationId === resolvedParams.id || p.donation?.id === resolvedParams.id)) {
+        setDonation((prev) =>
+          prev
+            ? {
+                ...prev,
+                ...(p.donation || {}),
+                status: p.status || prev.status,
+                ...(p.pickupVerification ? { pickupVerification: p.pickupVerification } : {}),
+                ...(p.deliveryVerification ? { deliveryVerification: p.deliveryVerification } : {}),
+              }
+            : null
+        );
+      }
+    });
+
+    // Subscribe to live driver movement & speedometer updates
+    const unsubLoc = realtimeEngine.subscribe('DRIVER_LOCATION_UPDATE', (evt) => {
+      const p = evt.payload;
+      if (p && (p.activeDonationId === resolvedParams.id || !p.activeDonationId)) {
+        setLiveDriverInfo(p);
+        if (p.status) {
+          setDonation((prev) => (prev ? { ...prev, status: p.status } : null));
+        }
+      }
+    });
+
+    // Background sync polling interval
+    const interval = setInterval(loadData, 6000);
+
+    return () => {
+      unsubStatus();
+      unsubLoc();
+      clearInterval(interval);
+    };
   }, [resolvedParams.id]);
+
+  const handleToggleTelemetry = async () => {
+    if (!donation) return;
+    try {
+      const { apiClient } = await import('@/services/apiClient');
+      if (!isTelemetryStreaming) {
+        setIsTelemetryStreaming(true);
+        await apiClient.post('/telemetry/simulate-route', { donationId: donation.id, speedMultiplier: 1.5 });
+      } else {
+        setIsTelemetryStreaming(false);
+        await apiClient.post('/telemetry/stop-simulation', { donationId: donation.id });
+      }
+    } catch (e) {
+      console.error('Failed to toggle live telemetry:', e);
+    }
+  };
 
   const handleSimulateRisk = async () => {
     if (!donation) return;
@@ -248,6 +310,56 @@ export default function LiveRescueTrackingPage({ params }: { params: Promise<{ i
         </div>
       )}
 
+      {/* REAL-TIME LIVE GPS TELEMETRY CONTROL BAR */}
+      {!isSelfDrive && donation.status !== 'DELIVERED' && (
+        <div className="bg-slate-900 text-white p-4 rounded-2xl border border-slate-800 shadow-xl flex flex-col md:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <span className="w-3.5 h-3.5 rounded-full bg-emerald-400 animate-ping" />
+            <div>
+              <div className="text-xs font-black uppercase tracking-wider text-emerald-400 flex items-center gap-2">
+                <span>🛰️ Live Real-Time Courier Telemetry</span>
+                <span className="bg-emerald-950 text-emerald-300 border border-emerald-800 text-[10px] px-2 py-0.5 rounded-full font-mono">
+                  WebSocket Stream Active
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-300 mt-0.5">
+                Courier: <strong>{donation.assignedDriver?.name || 'Active Volunteer'}</strong> ({donation.assignedDriver?.vehicleType || 'Refrigerated Van'}) &bull;{' '}
+                {liveDriverInfo ? (
+                  <span>
+                    Speed: <strong className="text-emerald-300">{liveDriverInfo.speed} km/h</strong> &bull; ETA:{' '}
+                    <strong className="text-amber-300">~{liveDriverInfo.etaMinutes} mins</strong> &bull; Heading:{' '}
+                    {liveDriverInfo.heading}°
+                  </span>
+                ) : (
+                  <span className="text-slate-400">Tracking GPS satellite motion stream...</span>
+                )}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2.5">
+            <button
+              onClick={handleToggleTelemetry}
+              className={`px-4 py-2 text-xs font-black rounded-xl transition-all flex items-center gap-2 shadow-md ${
+                isTelemetryStreaming
+                  ? 'bg-rose-600 hover:bg-rose-500 text-white'
+                  : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950'
+              }`}
+            >
+              {isTelemetryStreaming ? (
+                <>
+                  <Pause className="w-3.5 h-3.5" /> Pause Telemetry
+                </>
+              ) : (
+                <>
+                  <Play className="w-3.5 h-3.5" /> Start Live Courier Telemetry
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* MAIN TRACKING GRID */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* LEFT / MAIN AREA: INTERACTIVE MAP */}
@@ -318,9 +430,53 @@ export default function LiveRescueTrackingPage({ params }: { params: Promise<{ i
                 </span>
               </div>
 
-              <div className="text-[11px] text-emerald-300 flex items-start gap-1.5 pt-1">
-                <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
-                <span>Only disclose after verifying courier credentials and thermal packaging.</span>
+              <div className="space-y-1.5 pt-1">
+                <div className="text-[11px] text-emerald-300 flex items-start gap-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
+                  <span>Only disclose to the driver upon loading trays into courier vehicle.</span>
+                </div>
+                <div className="text-[10px] text-emerald-400 flex items-center gap-1.5 font-bold bg-emerald-900/40 px-2.5 py-1 rounded-lg border border-emerald-700/60">
+                  <Mail className="w-3 h-3 text-emerald-300" />
+                  <span>Dispatched to your registered donor email address.</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 1.5 DELIVERY HANDOVER OTP CARD (ACTIVE IN TRANSIT / DELIVERED) */}
+          {!isSelfDrive && (donation.status === 'PICKED_UP' || donation.status === 'IN_TRANSIT' || donation.status === 'DELIVERED') && (
+            <div className="bg-blue-950 text-white p-5 rounded-2xl border border-blue-700 space-y-3 shadow-xl">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <KeyRound className="w-4 h-4 text-blue-400" />
+                  <span className="text-xs font-mono font-bold text-blue-300 uppercase tracking-wider">
+                    DELIVERY HANDOVER OTP
+                  </span>
+                </div>
+                <span className="text-[10px] bg-blue-800 text-blue-200 px-2 py-0.5 rounded-full font-bold">
+                  SHELTER SIGN-OFF PIN
+                </span>
+              </div>
+
+              <p className="text-xs text-blue-200 leading-relaxed">
+                Dispatched to the recipient shelter and donor email. Shelter intake coordinator will share this with the driver:
+              </p>
+
+              <div className="flex items-center justify-center py-3 bg-blue-900/90 rounded-xl border border-blue-600 shadow-inner">
+                <span className="font-mono text-3xl font-black tracking-[0.4em] text-white">
+                  {donation.deliveryOtp || '8392'}
+                </span>
+              </div>
+
+              <div className="space-y-1.5 pt-1">
+                <div className="text-[11px] text-blue-300 flex items-start gap-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5 text-blue-400 shrink-0 mt-0.5" />
+                  <span>Driver must validate this code in their terminal to close the mission.</span>
+                </div>
+                <div className="text-[10px] text-blue-300 flex items-center gap-1.5 font-bold bg-blue-900/40 px-2.5 py-1 rounded-lg border border-blue-700/60">
+                  <Mail className="w-3 h-3 text-blue-300" />
+                  <span>Sent to shelter ({donation.matchedShelter?.name || 'Shelter'}) &amp; donor email.</span>
+                </div>
               </div>
             </div>
           )}

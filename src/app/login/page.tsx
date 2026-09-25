@@ -21,38 +21,38 @@ import {
   Clock,
   Sparkles,
   ChevronDown,
+  RefreshCw,
 } from 'lucide-react';
 
 export default function LoginPage() {
   const router = useRouter();
   const { login, sendOtp, verifyOtp } = useAuth();
 
-  // Mode: 'PHONE' or 'EMAIL'
-  const [authMode, setAuthMode] = useState<'PHONE' | 'EMAIL'>('PHONE');
+  // Mode: 'EMAIL_OTP' (Primary) | 'PHONE_OTP' | 'PASSWORD'
+  const [authMode, setAuthMode] = useState<'EMAIL_OTP' | 'PHONE_OTP' | 'PASSWORD'>('EMAIL_OTP');
 
-  // Phone OTP Flow State
-  const [phoneNumber, setPhoneNumber] = useState('+91 98765 23456');
-  const [countryCode, setCountryCode] = useState('+91');
+  // Email OTP State
+  const [email, setEmail] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState('');
   const [otpCode, setOtpCode] = useState('');
   const [otpSent, setOtpSent] = useState(false);
-  const [demoOtp, setDemoOtp] = useState('8492');
+  const [sentToAddress, setSentToAddress] = useState('');
   const [otpCountdown, setOtpCountdown] = useState(60);
   const [canResend, setCanResend] = useState(false);
 
-  // New user registration fields (if phone is new)
-  const [isNewUser, setIsNewUser] = useState(false);
+  // New user registration fields
   const [fullName, setFullName] = useState('');
   const [orgName, setOrgName] = useState('');
 
-  // Email / Password Fallback
-  const [email, setEmail] = useState('donor@replate.org');
-  const [password, setPassword] = useState('password123');
+  // Password Login
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
   // Common UI State
   const [selectedRole, setSelectedRole] = useState<UserRole>('DONOR');
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [successNotice, setSuccessNotice] = useState('');
 
   // Countdown timer for OTP
   useEffect(() => {
@@ -82,26 +82,37 @@ export default function LoginPage() {
     }
   };
 
-  // 1. Send OTP Handler
+  // 1. Send OTP Strictly to Email
   const handleSendOtp = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setErrorMessage('');
-    const clean = phoneNumber.trim();
-    if (clean.length < 8) {
-      setErrorMessage('Please enter a valid phone number');
-      return;
+    setSuccessNotice('');
+
+    const targetIdentifier = authMode === 'EMAIL_OTP' ? email.trim() : phoneNumber.trim();
+
+    if (authMode === 'EMAIL_OTP') {
+      if (!targetIdentifier || !targetIdentifier.includes('@')) {
+        setErrorMessage('Please enter a valid email address.');
+        return;
+      }
+    } else {
+      if (targetIdentifier.length < 8) {
+        setErrorMessage('Please enter a valid phone number.');
+        return;
+      }
     }
 
     setLoading(true);
     try {
-      const res = await sendOtp(clean);
+      const res = await sendOtp(targetIdentifier, selectedRole, fullName);
       setOtpSent(true);
-      setDemoOtp(res.demoOtp || '8492');
-      setOtpCode(res.demoOtp || '8492'); // Pre-fill for instant frictionless demo convenience
+      setSentToAddress(res.sentTo || targetIdentifier);
+      setOtpCode(''); // STRICTLY BLANK: User must get code from their actual email inbox!
       setOtpCountdown(60);
       setCanResend(false);
-    } catch {
-      setErrorMessage('Failed to send verification code. Please try again.');
+      setSuccessNotice(res.message || `Verification code sent to ${targetIdentifier}.`);
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Failed to send verification code to your email. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -111,28 +122,34 @@ export default function LoginPage() {
   const handleVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage('');
-    if (!otpCode || otpCode.length < 4) {
-      setErrorMessage('Please enter the 4-digit code');
+    const cleanCode = otpCode.trim();
+
+    if (!cleanCode || cleanCode.length < 4) {
+      setErrorMessage('Please enter the 4-digit code sent to your email.');
       return;
     }
 
     setLoading(true);
+    const targetIdentifier = authMode === 'EMAIL_OTP' ? email.trim() : phoneNumber.trim();
+
     try {
-      const user = await verifyOtp(phoneNumber, otpCode, selectedRole, {
-        name: fullName || (selectedRole === 'DONOR' ? 'Sarah Jenkins' : selectedRole === 'SHELTER' ? 'Hope Shelter Admin' : 'Aarav Volunteer'),
+      const emailPrefix = targetIdentifier.includes('@') ? targetIdentifier.split('@')[0] : 'Partner';
+      const fallbackName = emailPrefix.charAt(0).toUpperCase() + emailPrefix.slice(1).replace(/[._]/g, ' ');
+      const user = await verifyOtp(targetIdentifier, cleanCode, selectedRole, {
+        name: fullName || fallbackName,
         role: selectedRole,
-        organization: orgName || (selectedRole === 'DONOR' ? 'Grand Hyatt Hotel' : selectedRole === 'SHELTER' ? 'Hope Community Shelter' : 'Eco Courier Fleet'),
+        organization: orgName || `${selectedRole} Organization`,
       });
       router.push(getDashboardRoute(user.role));
     } catch (err: any) {
-      setErrorMessage(err.message || 'Verification failed. Please check the code.');
+      setErrorMessage(err.message || 'Verification failed. Please check the code in your email inbox.');
     } finally {
       setLoading(false);
     }
   };
 
-  // 3. Email Login Handler
-  const handleEmailSubmit = async (e: React.FormEvent) => {
+  // 3. Password Fallback Login
+  const handleEmailPasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage('');
     setLoading(true);
@@ -140,69 +157,56 @@ export default function LoginPage() {
       const user = await login(email, selectedRole);
       router.push(getDashboardRoute(user.role));
     } catch {
-      setErrorMessage('Login failed. Please verify your credentials.');
+      setErrorMessage('Login failed. Please verify your credentials or use Email OTP.');
     } finally {
       setLoading(false);
     }
   };
 
-  // Preset demo account selector
-  const handleSelectDemoProfile = (role: UserRole, phoneNum: string, mail: string) => {
-    setSelectedRole(role);
-    setPhoneNumber(phoneNum);
-    setEmail(mail);
-    setOtpSent(false);
-    setErrorMessage('');
-  };
-
   return (
-    <div className="min-h-[88vh] flex items-center justify-center p-4 lg:p-8">
-      <div className="w-full max-w-5xl bg-white rounded-3xl border border-slate-200 shadow-2xl overflow-hidden grid grid-cols-1 lg:grid-cols-12">
-        {/* LEFT BRAND SHOWCASE SIDEBAR */}
-        <div className="lg:col-span-5 bg-slate-900 text-white p-8 lg:p-12 flex flex-col justify-between relative overflow-hidden">
-          <div className="relative z-10 space-y-6">
-            <Link href="/" className="flex items-center gap-2.5">
-              <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white font-black text-2xl flex items-center justify-center shadow-lg shadow-emerald-600/30">
+    <div className="min-h-[85vh] flex items-center justify-center px-4 py-8 bg-slate-50/50">
+      <div className="w-full max-w-4xl grid grid-cols-1 lg:grid-cols-12 rounded-3xl border border-slate-200 overflow-hidden shadow-2xl bg-white">
+        {/* LEFT BRAND PANEL */}
+        <div className="lg:col-span-5 bg-gradient-to-br from-slate-950 via-slate-900 to-emerald-950 p-8 lg:p-10 text-white flex flex-col justify-between relative overflow-hidden">
+          <div className="absolute -right-16 -top-16 w-56 h-56 rounded-full bg-emerald-500/10 blur-3xl" />
+          <div className="absolute -left-16 -bottom-16 w-56 h-56 rounded-full bg-blue-500/10 blur-3xl" />
+
+          <div className="relative z-10 space-y-4">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-emerald-500 flex items-center justify-center font-black text-slate-950 text-base shadow-lg shadow-emerald-500/30">
                 R
               </div>
-              <span className="font-extrabold text-xl text-white tracking-tight">RePlate</span>
-            </Link>
-
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-950 text-emerald-400 text-[11px] font-extrabold border border-emerald-800/80">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              REAL-TIME FOOD RESCUE LOGISTICS
+              <span className="text-xl font-black tracking-tight text-white">RePlate</span>
             </div>
 
-            <div className="space-y-3">
-              <h2 className="text-2xl lg:text-3xl font-black tracking-tight text-slate-100 leading-tight">
-                From Surplus to <span className="text-emerald-400 underline decoration-emerald-500/50">Someone’s Plate.</span>
+            <div className="space-y-2 pt-6">
+              <span className="text-[10px] font-extrabold uppercase px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 inline-flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                STRICT EMAIL VERIFICATION
+              </span>
+              <h2 className="text-2xl font-black tracking-tight text-white leading-tight">
+                Surplus Food Rescue & Logistics Network
               </h2>
-              <p className="text-xs text-slate-300 leading-relaxed">
-                Connect restaurants, caterers, shelters, and volunteer drivers before food rescue windows expire.
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Connect surplus food directly to community kitchens and shelters with cryptographically verified OTP handovers.
               </p>
             </div>
           </div>
 
-          {/* Operational Telemetry Badge */}
-          <div className="relative z-10 my-8 bg-slate-800/80 backdrop-blur-md p-4 rounded-2xl border border-slate-700 space-y-3">
-            <div className="text-[10px] font-mono uppercase tracking-wider text-slate-400 font-bold">
-              VERIFIED RESCUE NETWORK
-            </div>
-            <div className="grid grid-cols-2 gap-3 text-xs">
-              <div>
-                <span className="text-xl font-black text-emerald-400 block">42,850+</span>
-                <span className="text-[11px] text-slate-400">Portions Saved</span>
+          <div className="relative z-10 space-y-3 pt-8">
+            <div className="p-3.5 rounded-2xl bg-white/5 border border-white/10 space-y-1.5 backdrop-blur-xs">
+              <div className="text-[11px] font-bold text-emerald-400 flex items-center gap-1.5">
+                <ShieldCheck className="w-4 h-4" /> Security Protocol
               </div>
-              <div>
-                <span className="text-xl font-black text-amber-400 block">&lt; 15 min</span>
-                <span className="text-[11px] text-slate-400">Match Buffer</span>
-              </div>
+              <p className="text-[11px] text-slate-300 leading-relaxed">
+                Authentication codes and delivery handovers are transmitted strictly via email to guarantee legitimate custody.
+              </p>
             </div>
-          </div>
 
-          <div className="relative z-10 text-[11px] text-slate-400 flex items-center gap-2 pt-4 border-t border-slate-800">
-            <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
-            <span>Secure OTP Handover & Temperature Verification</span>
+            <div className="text-[11px] text-slate-400 flex items-center gap-2 pt-2 border-t border-slate-800">
+              <Clock className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+              <span>10-minute secure single-use email passcodes</span>
+            </div>
           </div>
         </div>
 
@@ -210,38 +214,54 @@ export default function LoginPage() {
         <div className="lg:col-span-7 p-8 lg:p-12 space-y-6 flex flex-col justify-center bg-white">
           <div className="space-y-1">
             <h1 className="text-2xl font-black text-slate-900 tracking-tight">Sign In to RePlate</h1>
-            <p className="text-xs text-slate-500">Access your donor, shelter receiver, or driver workspace</p>
+            <p className="text-xs text-slate-500">Access your donor, shelter receiver, or driver courier portal</p>
           </div>
 
-          {/* MODE SELECTOR (PHONE OTP vs EMAIL) */}
+          {/* MODE SELECTOR (EMAIL OTP vs PHONE OTP vs PASSWORD) */}
           <div className="flex p-1 bg-slate-100 rounded-xl">
             <button
               type="button"
               onClick={() => {
-                setAuthMode('PHONE');
+                setAuthMode('EMAIL_OTP');
+                setOtpSent(false);
                 setErrorMessage('');
               }}
               className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
-                authMode === 'PHONE'
+                authMode === 'EMAIL_OTP'
                   ? 'bg-white text-slate-900 shadow-xs'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              <Phone className="w-3.5 h-3.5 text-emerald-600" /> Phone OTP Login
+              <Mail className="w-3.5 h-3.5 text-emerald-600" /> Email OTP (Direct)
             </button>
             <button
               type="button"
               onClick={() => {
-                setAuthMode('EMAIL');
+                setAuthMode('PHONE_OTP');
+                setOtpSent(false);
                 setErrorMessage('');
               }}
               className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
-                authMode === 'EMAIL'
+                authMode === 'PHONE_OTP'
                   ? 'bg-white text-slate-900 shadow-xs'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              <Mail className="w-3.5 h-3.5 text-blue-600" /> Email & Password
+              <Phone className="w-3.5 h-3.5 text-blue-600" /> Phone OTP
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setAuthMode('PASSWORD');
+                setErrorMessage('');
+              }}
+              className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+                authMode === 'PASSWORD'
+                  ? 'bg-white text-slate-900 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Lock className="w-3.5 h-3.5 text-slate-600" /> Password
             </button>
           </div>
 
@@ -296,33 +316,60 @@ export default function LoginPage() {
             </div>
           )}
 
+          {successNotice && (
+            <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-medium flex items-start gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+              <span>{successNotice}</span>
+            </div>
+          )}
+
           {/* ========================================== */}
-          {/* 1. PHONE OTP AUTHENTICATION FLOW */}
+          {/* 1. EMAIL / PHONE OTP AUTHENTICATION FLOW   */}
           {/* ========================================== */}
-          {authMode === 'PHONE' && (
+          {(authMode === 'EMAIL_OTP' || authMode === 'PHONE_OTP') && (
             <div className="space-y-4">
               {!otpSent ? (
-                /* STEP 1: ENTER PHONE NUMBER */
+                /* STEP 1: ENTER EMAIL / PHONE & DISPATCH CODE */
                 <form onSubmit={handleSendOtp} className="space-y-4">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-slate-700">Mobile Phone Number</label>
-                    <div className="relative flex rounded-xl border border-slate-300 focus-within:border-emerald-600 focus-within:ring-2 focus-within:ring-emerald-600/10 overflow-hidden bg-white">
-                      <span className="inline-flex items-center px-3.5 bg-slate-50 border-r border-slate-200 text-xs font-bold text-slate-600 select-none">
-                        🇮🇳 +91
-                      </span>
-                      <input
-                        type="tel"
-                        value={phoneNumber}
-                        onChange={(e) => setPhoneNumber(e.target.value)}
-                        placeholder="98765 43210"
-                        required
-                        className="w-full px-3.5 py-3 text-sm font-semibold text-slate-900 focus:outline-none placeholder:text-slate-400"
-                      />
+                  {authMode === 'EMAIL_OTP' ? (
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-slate-700">Your Email Address</label>
+                      <div className="relative">
+                        <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
+                        <input
+                          type="email"
+                          value={email}
+                          onChange={(e) => setEmail(e.target.value)}
+                          placeholder="yourname@gmail.com"
+                          required
+                          className="w-full pl-10 pr-4 py-3 text-sm font-semibold text-slate-900 rounded-xl border border-slate-300 focus:outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/10 placeholder:text-slate-400"
+                        />
+                      </div>
+                      <p className="text-[11px] text-slate-500">
+                        We will send a 4-digit verification code to your actual email inbox.
+                      </p>
                     </div>
-                    <p className="text-[11px] text-slate-500">
-                      We will send a 4-digit verification code to authenticate your session.
-                    </p>
-                  </div>
+                  ) : (
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-slate-700">Mobile Phone Number</label>
+                      <div className="relative flex rounded-xl border border-slate-300 focus-within:border-emerald-600 focus-within:ring-2 focus-within:ring-emerald-600/10 overflow-hidden bg-white">
+                        <span className="inline-flex items-center px-3.5 bg-slate-50 border-r border-slate-200 text-xs font-bold text-slate-600 select-none">
+                          🇮🇳 +91
+                        </span>
+                        <input
+                          type="tel"
+                          value={phoneNumber}
+                          onChange={(e) => setPhoneNumber(e.target.value)}
+                          placeholder="98765 43210"
+                          required
+                          className="w-full px-3.5 py-3 text-sm font-semibold text-slate-900 focus:outline-none placeholder:text-slate-400"
+                        />
+                      </div>
+                      <p className="text-[11px] text-slate-500">
+                        A verification code will be dispatched to your registered address.
+                      </p>
+                    </div>
+                  )}
 
                   <button
                     type="submit"
@@ -333,35 +380,44 @@ export default function LoginPage() {
                       <span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
                     ) : (
                       <>
-                        <span>Send Verification Code</span>
+                        <span>Send Verification Code to Email</span>
                         <ArrowRight className="w-4 h-4" />
                       </>
                     )}
                   </button>
                 </form>
               ) : (
-                /* STEP 2: ENTER OTP & VERIFY */
+                /* STEP 2: ENTER OTP & VERIFY (STRICTLY FROM INBOX) */
                 <form onSubmit={handleVerifyOtp} className="space-y-4">
-                  {/* Real-life SMS Notification banner mockup */}
-                  <div className="p-3.5 bg-emerald-50 rounded-xl border border-emerald-200 text-xs text-emerald-950 flex items-start gap-2.5">
-                    <Sparkles className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                    <div className="space-y-1">
-                      <p className="font-bold">Verification code sent to {phoneNumber}</p>
-                      <p className="text-[11px] text-emerald-800">
-                        Demo OTP Code: <strong className="font-mono text-sm bg-white px-2 py-0.5 rounded border border-emerald-300 text-emerald-900 tracking-widest">{demoOtp}</strong> (Valid for 5 mins)
-                      </p>
+                  {/* Clean Email Dispatch Notification - Strictly NO OTP displayed on frontend */}
+                  <div className="p-4 bg-emerald-50/80 rounded-2xl border border-emerald-200 text-xs text-emerald-950 space-y-1.5 shadow-2xs">
+                    <div className="flex items-center gap-2">
+                      <Mail className="w-4 h-4 text-emerald-700 shrink-0" />
+                      <span className="font-extrabold text-xs text-emerald-900">
+                        Verification Code Dispatched to Email
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-emerald-800 leading-relaxed">
+                      We sent your one-time passcode to <strong>{sentToAddress || email}</strong>. Please check your email inbox (and spam/junk folder) and enter the 4-digit code below.
+                    </p>
+                    <div className="text-[10px] text-emerald-700 font-semibold pt-1 border-t border-emerald-200/60 flex items-center gap-1">
+                      <ShieldCheck className="w-3.5 h-3.5" />
+                      <span>Security Standard: Passcodes are never exposed on the web interface.</span>
                     </div>
                   </div>
 
                   <div className="space-y-1.5">
                     <div className="flex items-center justify-between">
-                      <label className="text-xs font-bold text-slate-700">Enter 4-Digit OTP</label>
+                      <label className="text-xs font-bold text-slate-700">Enter 4-Digit Passcode</label>
                       <button
                         type="button"
-                        onClick={() => setOtpSent(false)}
-                        className="text-[11px] font-bold text-emerald-600 hover:text-emerald-700"
+                        onClick={() => {
+                          setOtpSent(false);
+                          setOtpCode('');
+                        }}
+                        className="text-[11px] font-bold text-slate-500 hover:text-slate-800"
                       >
-                        Change Number
+                        Change Email
                       </button>
                     </div>
 
@@ -371,92 +427,54 @@ export default function LoginPage() {
                         type="text"
                         maxLength={6}
                         value={otpCode}
-                        onChange={(e) => setOtpCode(e.target.value)}
-                        placeholder="• • • •"
+                        onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ''))}
+                        placeholder="••••"
                         required
                         autoFocus
-                        className="w-full pl-10 pr-4 py-3 text-lg font-mono font-bold tracking-widest text-slate-900 rounded-xl border border-slate-300 focus:outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/10 placeholder:text-slate-300"
+                        className="w-full pl-10 pr-4 py-3 text-center tracking-[0.4em] font-mono text-xl font-black text-slate-900 rounded-xl border border-slate-300 focus:outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/10 placeholder:tracking-normal placeholder:font-sans placeholder:text-slate-300"
                       />
                     </div>
                   </div>
 
-                  {/* Resend Countdown */}
-                  <div className="flex items-center justify-between text-xs text-slate-500">
-                    <span className="flex items-center gap-1">
-                      <Clock className="w-3.5 h-3.5" />
-                      {otpCountdown > 0 ? `Resend code in ${otpCountdown}s` : 'Did not receive code?'}
-                    </span>
-                    {canResend && (
-                      <button
-                        type="button"
-                        onClick={() => handleSendOtp()}
-                        className="font-bold text-emerald-600 hover:text-emerald-700"
-                      >
-                        Resend OTP
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Optional user details for new registration */}
-                  <div className="pt-2 border-t border-slate-100 space-y-3">
-                    <button
-                      type="button"
-                      onClick={() => setIsNewUser(!isNewUser)}
-                      className="text-[11px] font-bold text-slate-500 hover:text-slate-800 flex items-center gap-1"
-                    >
-                      <span>{isNewUser ? '– Hide Profile Details' : '+ New user? Add Profile Details'}</span>
-                    </button>
-
-                    {isNewUser && (
-                      <div className="space-y-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
-                        <div>
-                          <label className="text-[11px] font-bold text-slate-700 block mb-1">Full Name</label>
-                          <input
-                            type="text"
-                            value={fullName}
-                            onChange={(e) => setFullName(e.target.value)}
-                            placeholder="Sarah Jenkins"
-                            className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none bg-white"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[11px] font-bold text-slate-700 block mb-1">Organization / Store Name</label>
-                          <input
-                            type="text"
-                            value={orgName}
-                            onChange={(e) => setOrgName(e.target.value)}
-                            placeholder="Grand Hyatt Catering / Hope Shelter"
-                            className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none bg-white"
-                          />
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
                   <button
                     type="submit"
-                    disabled={loading}
-                    className="w-full py-3 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-sm rounded-xl transition-all shadow-md shadow-emerald-600/20 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
+                    disabled={loading || otpCode.length < 4}
+                    className="w-full py-3 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-sm rounded-xl transition-all shadow-md shadow-emerald-600/20 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
                   >
                     {loading ? (
                       <span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
                     ) : (
                       <>
-                        <span>Verify OTP & Sign In</span>
+                        <span>Verify Email & Sign In</span>
                         <CheckCircle2 className="w-4 h-4" />
                       </>
                     )}
                   </button>
+
+                  <div className="flex items-center justify-between text-xs text-slate-500 pt-1">
+                    <span>Didn’t receive the code?</span>
+                    {canResend ? (
+                      <button
+                        type="button"
+                        onClick={handleSendOtp}
+                        className="font-bold text-emerald-600 hover:text-emerald-700 cursor-pointer flex items-center gap-1"
+                      >
+                        <RefreshCw className="w-3 h-3" /> Resend Code
+                      </button>
+                    ) : (
+                      <span className="text-slate-400 font-medium">Resend in {otpCountdown}s</span>
+                    )}
+                  </div>
                 </form>
               )}
             </div>
           )}
 
           {/* ========================================== */}
-          {/* 2. EMAIL & PASSWORD FALLBACK */}
+          {/* 2. PASSWORD FALLBACK                      */}
           {/* ========================================== */}
-          {authMode === 'EMAIL' && (
-            <form onSubmit={handleEmailSubmit} className="space-y-4">
+          {authMode === 'PASSWORD' && (
+            <form onSubmit={handleEmailPasswordSubmit} className="space-y-4">
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-slate-700">Email Address</label>
                 <div className="relative">
@@ -465,7 +483,7 @@ export default function LoginPage() {
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="sarah@grandhyatt.com"
+                    placeholder="yourname@gmail.com"
                     required
                     className="w-full pl-10 pr-4 py-3 text-sm font-semibold text-slate-900 rounded-xl border border-slate-300 focus:outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/10 placeholder:text-slate-400"
                   />
@@ -516,40 +534,23 @@ export default function LoginPage() {
             </form>
           )}
 
-          {/* QUICK DEMO LOGIN BUTTONS */}
-          <div className="pt-2 border-t border-slate-100 space-y-2">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block text-center">
-              Quick One-Click Demo Profiles
-            </span>
-            <div className="grid grid-cols-3 gap-2">
-              <button
-                type="button"
-                onClick={() => handleSelectDemoProfile('DONOR', '+91 98765 23456', 'donor@replate.org')}
-                className="py-1.5 px-2 bg-slate-50 hover:bg-emerald-50 hover:border-emerald-300 border border-slate-200 rounded-lg text-[11px] font-bold text-slate-700 transition-colors"
-              >
-                🥗 Donor Demo
-              </button>
-              <button
-                type="button"
-                onClick={() => handleSelectDemoProfile('SHELTER', '+91 98765 87654', 'shelter@replate.org')}
-                className="py-1.5 px-2 bg-slate-50 hover:bg-purple-50 hover:border-purple-300 border border-slate-200 rounded-lg text-[11px] font-bold text-slate-700 transition-colors"
-              >
-                🏠 Shelter Demo
-              </button>
-              <button
-                type="button"
-                onClick={() => handleSelectDemoProfile('DRIVER', '+91 98765 11223', 'driver@replate.org')}
-                className="py-1.5 px-2 bg-slate-50 hover:bg-blue-50 hover:border-blue-300 border border-slate-200 rounded-lg text-[11px] font-bold text-slate-700 transition-colors"
-              >
-                🚗 Courier Demo
-              </button>
+          {/* LIVE EMAIL VERIFICATION BADGE */}
+          <div className="pt-2 border-t border-slate-100">
+            <div className="p-3 bg-emerald-50/60 border border-emerald-200/80 rounded-2xl text-center space-y-1">
+              <span className="text-[11px] font-extrabold text-emerald-900 flex items-center justify-center gap-1.5">
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                Live Email OTP Verification Active
+              </span>
+              <p className="text-[11px] text-emerald-800 leading-normal">
+                Enter your real email above. A secure 4-digit code will be generated and dispatched directly to your inbox via the configured system sender.
+              </p>
             </div>
           </div>
 
           <div className="text-center text-xs text-slate-500">
             Don’t have an account?{' '}
             <Link href="/register" className="font-extrabold text-emerald-600 hover:text-emerald-700">
-              Create an Account
+              Create an Account with Email Verification
             </Link>
           </div>
         </div>

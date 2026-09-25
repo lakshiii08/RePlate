@@ -1,7 +1,6 @@
 import { Shelter, Driver, Donation } from '@/types';
-import { MOCK_SHELTERS, MOCK_DRIVERS } from './mockData';
+import { findRankedSheltersForDonation, VERIFIED_SHELTERS_DATA } from './locationData';
 import { donationService } from './donationService';
-import { aiService } from './aiService';
 import { apiClient } from './apiClient';
 
 export interface MatchingStageProgress {
@@ -17,39 +16,43 @@ export const matchingService = {
     }
 
     const donation = await donationService.getDonationById(donationId);
-    
-    // Compute explainable scores for shelters locally
-    const sheltersWithScores = await Promise.all(
-      MOCK_SHELTERS.map(async (shelter) => {
-        const score = await aiService.generateExplainableMatchReason(
-          shelter.name,
-          donation?.category || 'Cooked Meal',
-          shelter.etaMinutes,
-          shelter.capacityMeals,
-          donation?.rescueWindowMinutes || 90
-        );
-        return {
-          ...shelter,
-          feasibilityScore: score,
-        };
-      })
+    const donorCoords = donation?.donorCoords || [28.6315, 77.2167];
+
+    // Compute real distance-ranked candidate shelters using AI nearest-route algorithm
+    const rankedShelters = findRankedSheltersForDonation(
+      donorCoords,
+      donation?.category || 'Meal',
+      donation?.mealCount || 30,
+      donation?.foodType || 'Veg',
+      donation?.rescueWindowMinutes || 180
     );
 
-    return sheltersWithScores.sort(
-      (a, b) => (b.feasibilityScore?.overallScore || 0) - (a.feasibilityScore?.overallScore || 0)
-    );
+    return rankedShelters;
   },
 
-  async getAvailableDrivers(): Promise<Driver[]> {
-    const apiRes = await apiClient.get<Driver[]>('/drivers?status=AVAILABLE');
+  async getAvailableDrivers(donorCoords?: [number, number]): Promise<Driver[]> {
+    const query = donorCoords
+      ? `/drivers?status=AVAILABLE&lat=${donorCoords[0]}&lng=${donorCoords[1]}`
+      : '/drivers?status=AVAILABLE';
+    const apiRes = await apiClient.get<Driver[]>(query);
     if (apiRes.data && Array.isArray(apiRes.data) && apiRes.data.length > 0) {
       return apiRes.data;
     }
-    return [...MOCK_DRIVERS];
+
+    // Fallback: fetch all active couriers from database
+    const allRes = await apiClient.get<Driver[]>('/drivers');
+    if (allRes.data && Array.isArray(allRes.data) && allRes.data.length > 0) {
+      return allRes.data.filter((d) => d.status !== 'OFFLINE');
+    }
+
+    return [];
   },
 
   async selectMatch(donationId: string, shelterId: string): Promise<Donation> {
-    const shelter = MOCK_SHELTERS.find((s) => s.id === shelterId) || MOCK_SHELTERS[0];
+    const sRes = await apiClient.get<Shelter[]>('/shelters');
+    const allShelters = (sRes.data && sRes.data.length > 0) ? sRes.data : VERIFIED_SHELTERS_DATA;
+    const shelter = allShelters.find((s) => s.id === shelterId) || allShelters[0];
+
     return donationService.updateDonationStatus(donationId, 'MATCHED', {
       matchedShelter: shelter,
     });
@@ -64,10 +67,13 @@ export const matchingService = {
       return apiRes.data;
     }
 
-    const driver = MOCK_DRIVERS.find((d) => d.id === driverId) || MOCK_DRIVERS[0];
+    const dRes = await apiClient.get<Driver[]>('/drivers');
+    const drivers = dRes.data || [];
+    const driver = drivers.find((d) => d.id === driverId) || drivers[0];
+
     return donationService.updateDonationStatus(donationId, 'DRIVER_ASSIGNED', {
       assignedDriver: driver,
-      driverCoords: driver.coords,
+      driverCoords: driver?.coords,
     });
   },
 
@@ -84,18 +90,22 @@ export const matchingService = {
     if (apiRes.data && apiRes.data.donation) {
       return {
         donation: apiRes.data.donation,
-        backupDrivers: [apiRes.data.backupDriver],
-        backupShelters: [apiRes.data.backupShelter],
+        backupDrivers: apiRes.data.backupDriver ? [apiRes.data.backupDriver] : [],
+        backupShelters: apiRes.data.backupShelter ? [apiRes.data.backupShelter] : [],
       };
     }
 
-    const backupShelters = MOCK_SHELTERS.slice(1);
-    const backupDrivers = MOCK_DRIVERS.slice(1);
+    const [dRes, sRes] = await Promise.all([
+      apiClient.get<Driver[]>('/drivers'),
+      apiClient.get<Shelter[]>('/shelters'),
+    ]);
+    const backupDrivers = dRes.data || [];
+    const backupShelters = sRes.data || VERIFIED_SHELTERS_DATA;
 
     const updated = await donationService.updateDonationStatus(donationId, 'RE_MATCHING', {
       assignedDriver: backupDrivers[0],
       matchedShelter: backupShelters[0],
-      driverCoords: backupDrivers[0].coords,
+      driverCoords: backupDrivers[0]?.coords,
     });
 
     return {
